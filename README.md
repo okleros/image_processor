@@ -27,7 +27,7 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
 
 3. For Ubuntu/Debian based distributions, the installation of those dependencies are as follows:
   
-  ```bash
+   ```bash
    sudo apt install libsdl2-dev -y
    sudo apt install libsdl2-image-dev -y
    ```
@@ -37,7 +37,7 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
 ## Usage
 
 1. Run the executable generated after building.
-   ```bash
+  ```bash
    ./kims
    ```
 2. Use KIMS for various image manipulation tasks similar to GIMP, but with a simpler interface.
