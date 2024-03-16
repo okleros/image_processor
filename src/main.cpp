@@ -13,7 +13,8 @@
 
 // Image functions
 void img_black_and_white(uint32_t* pixels, int w, int h);
-void img_steganography(uint32_t* pixels, int w, int h, const char* filename);
+void img_hide(uint32_t* pixels, int w, int h, const char* filename);
+void img_reveal(uint32_t* pixels, int w, int h, const char* filename);
 void img_negative(uint32_t* pixels, int w, int h);
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma);
 void img_log(uint32_t* pixels, int w, int h, float c);
@@ -22,7 +23,6 @@ void img_log(uint32_t* pixels, int w, int h, float c);
 bool create_window_and_renderer(SDL_Window** window, SDL_Renderer** renderer, SDL_DisplayMode display);
 bool remake_texture(SDL_Renderer* renderer, SDL_Texture** texture, int iw, int ih);
 bool init_SDL(SDL_DisplayMode* displayMode);
-
 
 // Auxiliary functions
 void get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
@@ -82,7 +82,7 @@ int main(int, char**)
     // Create window icon surface
     SDL_SetWindowIcon(window, SDL_ConvertSurfaceFormat(IMG_Load("../res/icon/sun-2081062_640.png"), SDL_PIXELFORMAT_RGBA8888, 0));
 
-    SDL_SetWindowFullscreen(window, /*SDL_WINDOW_FULLSCREEN*/0);
+    // SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -199,11 +199,11 @@ int main(int, char**)
 
             ImGui::SameLine();
             if (ImGui::Button("Hide"))
-                img_steganography(pixels, imgWidth, imgHeight, steg_text);
+                img_hide(pixels, imgWidth, imgHeight, steg_text);
 
             ImGui::SameLine();
             if (ImGui::Button("Reveal"))
-                img_steganography(pixels, imgWidth, imgHeight, steg_text);
+                img_reveal(pixels, imgWidth, imgHeight, steg_text);
 
 
             space_out();
@@ -555,27 +555,45 @@ void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
     }
 }
 
-void img_steganography(uint32_t* pixels, int w, int h, const char* filename)
+void img_hide(uint32_t* pixels, int w, int h, const char* filename)
 {
     int r, g, b, a;
-
-    int chars = 0;
 
     for (int i = 0; i < w*h; ++i)
     {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
+        
+        printf("[%d,%d,%d,%d] -> ", r, g, b, a);
         
         r &= 0xFE;
         g &= 0xFE;
         b &= 0xFE;
         a &= 0xFE;
         
+        printf("[%d,%d,%d,%d]\n", r, g, b, a);
+        
         pixels[i] = r << 24 | g << 16 | b << 8 | a;
-    
-        chars += 4;
     }
+}
 
-    chars /= 8;
+void img_reveal(uint32_t* pixels, int w, int h, const char* filename)
+{
+    int r, g, b, a;
+
+    for (int i = 0; i < w*h; ++i)
+    {
+        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
+        
+        printf("[%d,%d,%d,%d] -> ", r, g, b, a);
+
+        r |= 0x01;
+        g |= 0x01;
+        b |= 0x01;
+        a |= 0x01;
+
+        printf("[%d,%d,%d,%d]\n", r, g, b, a);
+        pixels[i] = r << 24 | g << 16 | b << 8 | a;
+    }
 }
 
 void space_out(int rep1, int rep2)
