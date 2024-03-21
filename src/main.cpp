@@ -21,12 +21,21 @@ Co-author: Unknown
 #include <vector>
 #include <SDL.h>
 
+#include <string>
+#include <vector>
+#include <fstream>
+#include <iostream>
+#include <algorithm>
+#include <filesystem>
+
+#define MAX_STEG_TEXT 256
+
 // Image functions
 void img_black_and_white(uint32_t* pixels, int w, int h);
 void img_negative(uint32_t* pixels, int w, int h);
-void img_reveal(uint32_t* pixels, int w, int h, const char* filename);
+char* img_reveal(uint32_t* pixels, int w, int h);
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma);
-void img_hide(uint32_t* pixels, int w, int h, const char* filename);
+void img_hide(uint32_t* pixels, int w, int h, const char* text);
 void img_log(uint32_t* pixels, int w, int h, float c);
 
 // Setup functions
@@ -114,7 +123,7 @@ int main(int, char**)
 
     for (size_t i = 0; i < graphData.size(); ++i)
     {
-        int a=100, b=150, r = i, v = 0.5*a, w = 0.5*b, L = 256;
+        int a=100, b=150, r = i, v = 0.5*a, L = 256;
         float l=.5, m=2, n=.5; 
 
         if ((0 <= r) & (r < a))
@@ -201,7 +210,7 @@ int main(int, char**)
 
             space_out();
 
-            static char steg_text[256] = ""; // Nome do arquivo a ser salvo
+            static char steg_text[MAX_STEG_TEXT]; // Nome do arquivo a ser salvo
             // Campo de texto para o nome do arquivo
             ImGui::InputTextWithHint("##Steganography text", "hidden text (max 256 chars)", steg_text, IM_ARRAYSIZE(steg_text));
 
@@ -211,7 +220,7 @@ int main(int, char**)
 
             ImGui::SameLine();
             if (ImGui::Button("Reveal"))
-                img_reveal(pixels, imgWidth, imgHeight, steg_text);
+                printf("%s\n", img_reveal(pixels, imgWidth, imgHeight));
 
 
             space_out();
@@ -564,36 +573,59 @@ void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
     }
 }
 
-void img_hide(uint32_t* pixels, int w, int h, const char* filename)
+void img_hide(uint32_t* pixels, int w, int h, const char* text)
 {
-    int r, g, b, a;
+    int r, g, b, a, c;
 
-    for (int i = 0; i < w*h; ++i) {
-        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
-        
-        r &= 0xFE;
-        g &= 0xFE;
-        b &= 0xFE;
-        a &= 0xFE;
-        
-        pixels[i] = r << 24 | g << 16 | b << 8 | a;
+    for (int i = 0; i < w*h; i += 2) {
+        c = *text;
+        for (int j = 0; j < 2; ++j) {
+            convert_hex_to_RGBA(pixels[i+j], &r, &g, &b, &a);
+
+            r = (r & 0xFE) | ((c >> 0x7) & 0x1);
+            c <<= 0x1;
+            g = (g & 0xFE) | ((c >> 0x7) & 0x1);
+            c <<= 0x1;
+            b = (b & 0xFE) | ((c >> 0x7) & 0x1);
+            c <<= 0x1;
+            a = (a & 0xFE) | ((c >> 0x7) & 0x1);
+            c <<= 0x1;
+            
+            pixels[i+j] = r << 0x18 | g << 0x10 | b << 0x8 | a;
+        }
+
+        if (*text == '\0')
+            break;
+
+        text++;
     }
 }
 
-void img_reveal(uint32_t* pixels, int w, int h, const char* filename)
+char* img_reveal(uint32_t* pixels, int w, int h)
 {
+    char* revealed_text = (char*)malloc(MAX_STEG_TEXT * sizeof(char));
+
     int r, g, b, a;
+    int current_char;
 
-    for (int i = 0; i < w*h; ++i) {
-        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
-        
-        r |= 0x01;
-        g |= 0x01;
-        b |= 0x01;
-        a |= 0x01;
+    for (int i = 0; i < MAX_STEG_TEXT; ++i) {
+        current_char = 0;
+        for (int j = 0; j < 2; ++j) {
+            convert_hex_to_RGBA(pixels[(i*2)+j], &r, &g, &b, &a);
+            
+            current_char = current_char << 0x1 | (r & 0x1);
+            current_char = current_char << 0x1 | (g & 0x1);
+            current_char = current_char << 0x1 | (b & 0x1);
+            current_char = current_char << 0x1 | (a & 0x1);
+        }
 
-        pixels[i] = r << 24 | g << 16 | b << 8 | a;
+        revealed_text[i] = (char)current_char;
+   
+        if (current_char == '\0')
+            break;
     }
+
+    return revealed_text;
 }
 
 void space_out(int rep1, int rep2)
