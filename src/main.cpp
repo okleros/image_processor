@@ -1,22 +1,32 @@
+/*
+KIPS - Kleros Image Processing Software. A poor clone of GIMP or any other Image manipulation
+software out there. Made entirely for a uni project, and definitely not intended to copy any other
+software at all 
+
+Author: Gutemberg Andrade 
+Co-author: Unknown 
+*/
+
 #include "imgui.h"
 #include "implot.h"
 #include "imgui_impl_sdl2.h"
 #include "imgui_impl_sdlrenderer2.h"
-#include <iostream>
-#include <SDL.h>
+
 #include <SDL2/SDL_image.h>
-#include <ctime>
-#include <string>
-#include <fstream>
 #include <filesystem>
 #include <algorithm>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <vector>
+#include <SDL.h>
 
 // Image functions
 void img_black_and_white(uint32_t* pixels, int w, int h);
-void img_hide(uint32_t* pixels, int w, int h, const char* filename);
-void img_reveal(uint32_t* pixels, int w, int h, const char* filename);
 void img_negative(uint32_t* pixels, int w, int h);
+void img_reveal(uint32_t* pixels, int w, int h, const char* filename);
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma);
+void img_hide(uint32_t* pixels, int w, int h, const char* filename);
 void img_log(uint32_t* pixels, int w, int h, float c);
 
 // Setup functions
@@ -25,7 +35,7 @@ bool remake_texture(SDL_Renderer* renderer, SDL_Texture** texture, int iw, int i
 bool init_SDL(SDL_DisplayMode* displayMode);
 
 // Auxiliary functions
-void get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
+bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
 void convert_hex_to_RGBA(uint32_t color_hex, int* r, int* g, int* b, int* a);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
@@ -42,8 +52,6 @@ namespace fs = std::filesystem;
 // Main code
 int main(int, char**)
 {
-    srand(time(NULL));
-
     uint32_t* pixels;
     SDL_DisplayMode display;
 
@@ -504,13 +512,13 @@ bool init_SDL(SDL_DisplayMode* displayMode)
     return 1;
 }
 
-void get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah)
+bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah)
 {
     SDL_Surface* imageSurface = SDL_ConvertSurfaceFormat(IMG_Load(img), SDL_PIXELFORMAT_RGBA8888, 0);
     if (imageSurface == NULL) {
         printf("Unable to load image! SDL_image Error: %s\n", IMG_GetError());
 
-        return;
+        return 0;
     }
 
     // Get image dimensions
@@ -537,14 +545,15 @@ void get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
     remake_texture(renderer, texture, *w, *h);
     
     SDL_FreeSurface(imageSurface);
+
+    return 1;
 }
 
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
 {
     int r, g, b, a;
 
-    for (int i = 0; i < w*h; ++i)
-    {
+    for (int i = 0; i < w*h; ++i) {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
         r = 255 * (c * std::pow((float)r / 255.0f, gamma));
@@ -559,18 +568,13 @@ void img_hide(uint32_t* pixels, int w, int h, const char* filename)
 {
     int r, g, b, a;
 
-    for (int i = 0; i < w*h; ++i)
-    {
+    for (int i = 0; i < w*h; ++i) {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
-        
-        printf("[%d,%d,%d,%d] -> ", r, g, b, a);
         
         r &= 0xFE;
         g &= 0xFE;
         b &= 0xFE;
         a &= 0xFE;
-        
-        printf("[%d,%d,%d,%d]\n", r, g, b, a);
         
         pixels[i] = r << 24 | g << 16 | b << 8 | a;
     }
@@ -580,18 +584,14 @@ void img_reveal(uint32_t* pixels, int w, int h, const char* filename)
 {
     int r, g, b, a;
 
-    for (int i = 0; i < w*h; ++i)
-    {
+    for (int i = 0; i < w*h; ++i) {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
-        printf("[%d,%d,%d,%d] -> ", r, g, b, a);
-
         r |= 0x01;
         g |= 0x01;
         b |= 0x01;
         a |= 0x01;
 
-        printf("[%d,%d,%d,%d]\n", r, g, b, a);
         pixels[i] = r << 24 | g << 16 | b << 8 | a;
     }
 }
@@ -599,14 +599,10 @@ void img_reveal(uint32_t* pixels, int w, int h, const char* filename)
 void space_out(int rep1, int rep2)
 {
     for (int i = 0; i < rep1; ++i)
-    {
         ImGui::Spacing();
-    }
     
     ImGui::Separator();
     
     for (int i = 0; i < rep2; ++i)
-    {
         ImGui::Spacing();
-    }
 }
