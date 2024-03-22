@@ -28,7 +28,8 @@ Co-author: Unknown
 #include <algorithm>
 #include <filesystem>
 
-#define MAX_STEG_TEXT 256
+#define MAX_STEG_TEXT 131000
+#define SIDEBAR_SIZE 360
 
 // Image functions
 void img_black_and_white(uint32_t* pixels, int w, int h);
@@ -73,7 +74,7 @@ int main(int, char**)
     init_SDL(&display);
 
     // Setup const variables
-    int imgAreaWidth = display.w - 340 /*340 é o tamanho da largura da UI na esquerda*/;
+    int imgAreaWidth = display.w - SIDEBAR_SIZE /*SIDEBAR_SIZE é o tamanho da largura da UI na esquerda*/;
     int imgAreaHeight = display.h/*- 69*/ /*69 é o tamanho da barra superior, temos que compensar na imagem*/;
 
     // Get image dimensions
@@ -160,7 +161,7 @@ int main(int, char**)
             // static float f = 0.0f;
             // static int counter = 0;
             ImGui::SetNextWindowPos(ImVec2(imgAreaWidth, 0));
-            ImGui::SetNextWindowSize(ImVec2(340, imgAreaHeight));
+            ImGui::SetNextWindowSize(ImVec2(SIDEBAR_SIZE, imgAreaHeight-20));
             ImGui::Begin("Image Settings", NULL, ImGuiWindowFlags_NoCollapse);                          // Create a window called "Hello, world!" and append into it.
 
             space_out(0, 2);
@@ -204,7 +205,7 @@ int main(int, char**)
             ImGui::DragFloat("##c_gamma", &c_gamma, 0.1f, 0.0f, 100.0f);
             ImGui::Text("gamma");
             ImGui::DragFloat("##gamma", &gamma, 0.1f, 0.0f, 100.0f);
-            ImGui::SameLine();
+            // ImGui::SameLine();
             if (ImGui::Button("Correct gamma"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                 img_gamma(pixels, imgWidth, imgHeight, c_gamma, gamma);
 
@@ -212,7 +213,7 @@ int main(int, char**)
 
             static char steg_text[MAX_STEG_TEXT]; // Nome do arquivo a ser salvo
             // Campo de texto para o nome do arquivo
-            ImGui::InputTextWithHint("##Steganography text", "hidden text (max 256 chars)", steg_text, IM_ARRAYSIZE(steg_text));
+            ImGui::InputTextMultiline/*WithHint*/("##Steganography text", steg_text, IM_ARRAYSIZE(steg_text));
 
             ImGui::SameLine();
             if (ImGui::Button("Hide"))
@@ -240,7 +241,7 @@ int main(int, char**)
             //     ImPlot::EndPlot();
             // }
 
-            space_out(100, 1);
+            space_out(1, 1);
 
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
             ImGui::End();
@@ -251,7 +252,7 @@ int main(int, char**)
 
         // Rendering
         ImGui::Render();
-        SDL_SetRenderDrawColor(renderer, 0x21, 0x21, 0x21, 0x21);
+        SDL_SetRenderDrawColor(renderer, 0x21, 0x21, 0x21, 0XFF);
         SDL_RenderClear(renderer);
         SDL_UpdateTexture(mainTexture, NULL, pixels, imgWidth * sizeof(uint32_t));
 
