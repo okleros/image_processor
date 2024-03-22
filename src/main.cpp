@@ -17,18 +17,13 @@ Co-author: Unknown
 #include <algorithm>
 #include <iostream>
 #include <fstream>
-#include <string>
+#include <cstring>
 #include <vector>
+#include <string>
 #include <SDL.h>
 
-#include <string>
-#include <vector>
-#include <fstream>
-#include <iostream>
-#include <algorithm>
-#include <filesystem>
 
-#define MAX_STEG_TEXT 131000
+#define MAX_STEG_TEXT 524288
 #define SIDEBAR_SIZE 360
 
 // Image functions
@@ -46,7 +41,7 @@ bool init_SDL(SDL_DisplayMode* displayMode);
 
 // Auxiliary functions
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
-void convert_hex_to_RGBA(uint32_t color_hex, int* r, int* g, int* b, int* a);
+void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void space_out(int rep1 = 1, int rep2 = 1);
@@ -62,6 +57,8 @@ namespace fs = std::filesystem;
 // Main code
 int main(int, char**)
 {
+    setbuf(stdout, NULL);
+
     uint32_t* pixels;
     SDL_DisplayMode display;
 
@@ -277,7 +274,7 @@ int main(int, char**)
     return 0;
 }
 
-void convert_hex_to_RGBA(uint32_t color_hex, int* r, int* g, int* b, int* a)
+void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a)
 {
     *r = color_hex >> 24 & 0xff;
     *g = color_hex >> 16 & 0xff;
@@ -287,7 +284,7 @@ void convert_hex_to_RGBA(uint32_t color_hex, int* r, int* g, int* b, int* a)
 
 void img_log(uint32_t* pixels, int w, int h, float c)
 {
-    int r, g, b, a;
+    uint8_t r, g, b, a;
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -303,7 +300,7 @@ void img_log(uint32_t* pixels, int w, int h, float c)
 
 void img_negative(uint32_t* pixels, int w, int h)
 {
-    int r, g, b, a;
+    uint8_t r, g, b, a;
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -319,7 +316,7 @@ void img_negative(uint32_t* pixels, int w, int h)
 
 void img_black_and_white(uint32_t* pixels, int w, int h)
 {
-    int r, g, b, a;
+    uint8_t r, g, b, a;
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -561,7 +558,7 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
 
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
 {
-    int r, g, b, a;
+    uint8_t r, g, b, a;
 
     for (int i = 0; i < w*h; ++i) {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
@@ -576,8 +573,21 @@ void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
 
 void img_hide(uint32_t* pixels, int w, int h, const char* text)
 {
-    int r, g, b, a, c;
+    uint8_t r, g, b, a, c;
 
+    size_t char_amt_supported = (float)w * h / 2;
+    size_t char_amt_given = strlen(text);
+
+    printf("%ld\n", char_amt_given);
+
+    if (strlen(text) > char_amt_supported) {
+        printf("The image is not big enough for %ld characters as it only supports %ld. Consider changing your image to at least a %dx%d size image and try again.\n", char_amt_given, char_amt_supported, (int)std::round(std::sqrt(char_amt_given*2)), (int)std::round(std::sqrt(char_amt_given*2)));
+
+        return;
+    }
+
+    printf("%ld\n", char_amt_given);
+    
     for (int i = 0; i < w*h; i += 2) {
         c = *text;
         for (int j = 0; j < 2; ++j) {
@@ -585,10 +595,13 @@ void img_hide(uint32_t* pixels, int w, int h, const char* text)
 
             r = (r & 0xFE) | ((c >> 0x7) & 0x1);
             c <<= 0x1;
+            
             g = (g & 0xFE) | ((c >> 0x7) & 0x1);
             c <<= 0x1;
+            
             b = (b & 0xFE) | ((c >> 0x7) & 0x1);
             c <<= 0x1;
+            
             a = (a & 0xFE) | ((c >> 0x7) & 0x1);
             c <<= 0x1;
             
@@ -606,8 +619,8 @@ char* img_reveal(uint32_t* pixels, int w, int h)
 {
     char* revealed_text = (char*)malloc(MAX_STEG_TEXT * sizeof(char));
 
-    int r, g, b, a;
-    int current_char;
+    uint8_t r, g, b, a;
+    uint8_t current_char;
 
     for (int i = 0; i < MAX_STEG_TEXT; ++i) {
         current_char = 0;
@@ -627,6 +640,49 @@ char* img_reveal(uint32_t* pixels, int w, int h)
     }
 
     return revealed_text;
+}
+
+void rgb2hsv(uint32_t hex_color, uint* h, uint* s, uint* v)
+{
+    uint8_t r, g, b, a;
+    float rl, gl, bl;
+
+    convert_hex_to_RGBA(hex_color, &r, &g, &b, &a);
+
+    rl = r/255; gl = g/255; bl = b/255;
+
+    float cmax = std::fmax(rl, std::fmax(gl, bl));
+    float cmin = std::fmin(rl, std::fmin(gl, bl));
+
+    float delta = cmax - cmin;
+
+    if (delta == 0)
+        *h = delta;
+    
+    else if (cmax == rl)
+        *h = 60 * (fmod(((gl - bl) / delta), 6.0f));
+    
+    else if (cmax == gl)
+        *h = 60 * (((bl - rl) / delta) + 2);
+    
+    else if (cmax == bl)
+        *h = 60 * (((rl - gl) / delta) + 4);
+
+    else
+        *h = 0;
+
+    if (cmax == 0)
+        *s = cmax;
+
+    else
+        *s = delta/cmax;
+
+    *v = cmax;
+}
+
+uint32_t hsv2rgb(uint h, uint s, uint v)
+{
+    return 0;
 }
 
 void space_out(int rep1, int rep2)
