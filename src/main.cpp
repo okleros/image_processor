@@ -27,6 +27,7 @@ Co-author: Unknown
 #define SIDEBAR_SIZE 360
 
 // Image functions
+void img_black_and_white_lum(uint32_t* pixels, int w, int h);
 void img_black_and_white(uint32_t* pixels, int w, int h);
 void img_negative(uint32_t* pixels, int w, int h);
 char* img_reveal(uint32_t* pixels, int w, int h);
@@ -40,6 +41,7 @@ bool remake_texture(SDL_Renderer* renderer, SDL_Texture** texture, int iw, int i
 bool init_SDL(SDL_DisplayMode* displayMode);
 
 // Auxiliary functions
+void generate_normalized_histogram(uint32_t* pixels, int w, int h);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
 void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
@@ -54,9 +56,29 @@ namespace fs = std::filesystem;
 #error This backend requires SDL 2.0.17+ because of SDL_RenderGeometry() function
 #endif
 
+template<typename T>
+T clamp(T n, T lower, T upper)
+{
+    return (T)std::min(std::max(n, lower), upper);
+}
+
+template <typename T, size_t N>
+T array_max(const T (&array)[N]) {
+    // Find the maximum element in the array
+    auto max_element_iter = std::max_element(std::begin(array), std::end(array));
+    
+    // Return the maximum element
+    return *max_element_iter;
+}
+
+// histogramas em RGB 
+float hr[256], hg[256], hb[256];
+float maxmax;
+
 // Main code
 int main(int, char**)
 {
+
     setbuf(stdout, NULL);
 
     uint32_t* pixels;
@@ -161,67 +183,88 @@ int main(int, char**)
             ImGui::SetNextWindowSize(ImVec2(SIDEBAR_SIZE, imgAreaHeight-20));
             ImGui::Begin("Image Settings", NULL, ImGuiWindowFlags_NoCollapse);                          // Create a window called "Hello, world!" and append into it.
 
-            space_out(0, 2);
-
-            file_dialog(renderer, &mainTexture, &pixels, &imgWidth, &imgHeight, &destRect, imgAreaWidth, imgAreaHeight);
-            
-            space_out(2, 2);
-
-            img_save(pixels, imgWidth, imgHeight);
-
-            space_out(2);
+            if (ImGui::CollapsingHeader("Load/Save Images")) {
+                file_dialog(renderer, &mainTexture, &pixels, &imgWidth, &imgHeight, &destRect, imgAreaWidth, imgAreaHeight);
+                img_save(pixels, imgWidth, imgHeight);
+            }
 
             // ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-            ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
+            // ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
             // ImGui::Checkbox("Another Window", &show_another_window);
 
             // ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
             // ImGui::ColorEdit4("clear color", (float*)&clear_color); // Edit 3 floats representing a color
 
-            ImGui::SameLine();
-            if (ImGui::Button("B&W"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                img_black_and_white(pixels, imgWidth, imgHeight);
-            ImGui::SameLine();
-            if (ImGui::Button("Negative"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                img_negative(pixels, imgWidth, imgHeight);
+            if (ImGui::CollapsingHeader("Intensity Transformations")) {
+                // ImGui::Indent();
+                ImGui::BeginGroup();
 
-            space_out();
+                if (ImGui::Button("B&W"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+                    img_black_and_white(pixels, imgWidth, imgHeight);
 
-            static float c_log = 0;
-            ImGui::Text("c_log");
-            ImGui::DragFloat("##c_log", &c_log, 0.1f, 0.0f, 100.0f);
-            ImGui::SameLine();
-            if (ImGui::Button("Log"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                img_log(pixels, imgWidth, imgHeight, c_log);
- 
-            space_out();
+                ImGui::SameLine();
+                if (ImGui::Button("B&W (Luminance)"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+                    img_black_and_white_lum(pixels, imgWidth, imgHeight);
 
-            static float c_gamma = 0;
-            static float gamma = 0;
-            ImGui::Text("c_gamma");
-            ImGui::DragFloat("##c_gamma", &c_gamma, 0.1f, 0.0f, 100.0f);
-            ImGui::Text("gamma");
-            ImGui::DragFloat("##gamma", &gamma, 0.1f, 0.0f, 100.0f);
-            // ImGui::SameLine();
-            if (ImGui::Button("Correct gamma"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                img_gamma(pixels, imgWidth, imgHeight, c_gamma, gamma);
+                ImGui::SameLine();
+                if (ImGui::Button("Negative"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+                    img_negative(pixels, imgWidth, imgHeight);
+                
+                static float c_log = 0;
+                ImGui::Text("c_log");
+                ImGui::DragFloat("##c_log", &c_log, 0.1f, 0.0f, 100.0f);
 
-            space_out();
+                ImGui::SameLine();
+                if (ImGui::Button("Log"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+                    img_log(pixels, imgWidth, imgHeight, c_log);
+     
+                space_out();
 
-            static char steg_text[MAX_STEG_TEXT]; // Nome do arquivo a ser salvo
-            // Campo de texto para o nome do arquivo
-            ImGui::InputTextMultiline/*WithHint*/("##Steganography text", steg_text, IM_ARRAYSIZE(steg_text));
+                static float c_gamma = 0;
+                static float gamma = 0;
+                ImGui::Text("c_gamma");
+                ImGui::DragFloat("##c_gamma", &c_gamma, 0.1f, 0.0f, 100.0f);
 
-            ImGui::SameLine();
-            if (ImGui::Button("Hide"))
-                img_hide(pixels, imgWidth, imgHeight, steg_text);
+                ImGui::Text("gamma");
+                ImGui::DragFloat("##gamma", &gamma, 0.1f, 0.0f, 100.0f);
 
-            ImGui::SameLine();
-            if (ImGui::Button("Reveal"))
-                printf("%s\n", img_reveal(pixels, imgWidth, imgHeight));
+                if (ImGui::Button("Correct gamma"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+                    img_gamma(pixels, imgWidth, imgHeight, c_gamma, gamma);
 
+                ImGui::EndGroup();
+                // ImGui::Unindent();
+            }
 
-            space_out();
+            if (ImGui::CollapsingHeader("Steganography")) {
+                static char steg_text[MAX_STEG_TEXT]; // Nome do arquivo a ser salvo
+                // Campo de texto para o nome do arquivo
+                ImGui::InputTextMultiline/*WithHint*/("##Steganography text", steg_text, IM_ARRAYSIZE(steg_text));
+
+                ImGui::SameLine();
+                if (ImGui::Button("Hide"))
+                    img_hide(pixels, imgWidth, imgHeight, steg_text);
+
+                ImGui::SameLine();
+                if (ImGui::Button("Reveal"))
+                    printf("%s\n", img_reveal(pixels, imgWidth, imgHeight));
+            }
+
+            if (ImGui::CollapsingHeader("Histogram Equalization")) {
+                ImGui::Indent();
+                ImGui::BeginGroup();
+
+                if (ImGui::Button("Regenerate Histograms"))
+                {
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight);
+                }
+
+                ImGui::PlotHistogram("HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+                ImGui::PlotHistogram("HistogramG", hg, IM_ARRAYSIZE(hg), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+                ImGui::PlotHistogram("HistogramB", hb, IM_ARRAYSIZE(hb), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+
+                ImGui::EndGroup();
+                ImGui::Unindent();
+            }
 
             // static int p1[2] = { 0, 0 };
 
@@ -274,61 +317,85 @@ int main(int, char**)
     return 0;
 }
 
-void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a)
+void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a)
 {
-    *r = color_hex >> 24 & 0xff;
-    *g = color_hex >> 16 & 0xff;
-    *b = color_hex >>  8 & 0xff;
-    *a = color_hex >>  0 & 0xff;
+    *r = (color_hex >> 24 & 0xff) / 255.0f;
+    *g = (color_hex >> 16 & 0xff) / 255.0f;
+    *b = (color_hex >>  8 & 0xff) / 255.0f;
+    *a = (color_hex >>  0 & 0xff) / 255.0f;
 }
 
 void img_log(uint32_t* pixels, int w, int h, float c)
 {
-    uint8_t r, g, b, a;
+    float r, g, b, a;
 
     for (int i = 0; i < w*h; ++i)
     {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
-        r = c * std::log10(r + 1);
-        g = c * std::log10(g + 1);
-        b = c * std::log10(b + 1);
+        // Aplica a transformação logarítmica
+        r = 255 * (c * std::log(1.0f + r));
+        g = 255 * (c * std::log(1.0f + g));
+        b = 255 * (c * std::log(1.0f + b));
+        a = 255 * (a);
         
-        pixels[i] = r << 24 | g << 16 | b << 8 | a;
+        // Clipping dos valores resultantes
+        r = clamp(r, 0.0f, 255.0f);
+        g = clamp(g, 0.0f, 255.0f);
+        b = clamp(b, 0.0f, 255.0f);
+        
+        // Atribui os valores de volta ao pixel
+        pixels[i] = (uint8_t)r << 24 | (uint8_t)g << 16 | (uint8_t)b << 8 | (uint8_t)a;
     }
 }
 
 void img_negative(uint32_t* pixels, int w, int h)
 {
-    uint8_t r, g, b, a;
+    float r, g, b, a;
 
     for (int i = 0; i < w*h; ++i)
     {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
 
-        r = 0xFF - r;
-        g = 0xFF - g;
-        b = 0xFF - b;
+        r = 255 * (1 - r);
+        g = 255 * (1 - g);
+        b = 255 * (1 - b);
+        a = 255 * (a);
 
-        pixels[i] = r << 24 | g << 16 | b << 8 | a;
+        pixels[i] = (uint8_t)r << 24 | (uint8_t)g << 16 | (uint8_t)b << 8 | (uint8_t)a;
     }
 }
 
 void img_black_and_white(uint32_t* pixels, int w, int h)
 {
-    uint8_t r, g, b, a;
+    float r, g, b, a;
+    int media;
 
     for (int i = 0; i < w*h; ++i)
     {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
-        int media = (r+g+b)/3;
+        media = 255 * ((r + g + b) / 3);
+
+        a = 255 * a;
         
-        r = media;
-        g = media;
-        b = media;
+        pixels[i] = media << 24 | media << 16 | media << 8 | (uint8_t)a;
+    }
+}
+
+void img_black_and_white_lum(uint32_t* pixels, int w, int h)
+{
+    float r, g, b, a;
+
+    for (int i = 0; i < w*h; ++i)
+    {
+        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
-        pixels[i] = r << 24 | g << 16 | b << 8 | a;
+        int media = 255 * ((r * 0.3 + g * 0.59 + b * 0.11));
+        
+        a = 255 * a;
+        
+        pixels[i] = media << 24 | media << 16 | media << 8 | (int)a;
     }
 }
 
@@ -448,12 +515,10 @@ void img_save(uint32_t* pixels, int width, int height)
 {
     static char filename[128] = ""; // Nome do arquivo a ser salvo
 
-    // Campo de texto para o nome do arquivo
-    ImGui::InputText("##File Name", filename, IM_ARRAYSIZE(filename));
 
     // Botão "Save"
     ImGui::SameLine();
-    if (ImGui::Button("Save File")) {
+    if (ImGui::Button("Save file as")) {
         std::string file = filename;
         std::string ext = file.substr(file.find_last_of(".") + 1);
         std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
@@ -498,6 +563,10 @@ void img_save(uint32_t* pixels, int width, int height)
             ImGui::EndPopup();
         }
     }
+
+    ImGui::SameLine();
+    // Campo de texto para o nome do arquivo
+    ImGui::InputText("##File Name", filename, IM_ARRAYSIZE(filename));
 }
 
 bool init_SDL(SDL_DisplayMode* displayMode)
@@ -536,14 +605,6 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
 
     *pixels = (uint32_t*)malloc((*w) * (*h) * sizeof(uint32_t));
 
-    /*if (*w > *h && (float)iaw/(*w) * (*h) <= iah) {
-        *rect = { 0, 0,  iaw, (int)((float)iaw/(*w) * (*h)) };
-    
-    } else {
-        *rect = { 0, 0, (int)((float)iah/(*h) * (*w)), iah };
-
-    }*/
-
     // Extract pixel data from image surface
     SDL_LockSurface(imageSurface);
     memcpy(*pixels, imageSurface->pixels, (*w) * (*h) * sizeof(uint32_t));
@@ -551,6 +612,8 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
 
     remake_texture(renderer, texture, *w, *h);
     
+    generate_normalized_histogram(*pixels, *w, *h);
+
     SDL_FreeSurface(imageSurface);
 
     return 1;
@@ -558,22 +621,24 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
 
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
 {
-    uint8_t r, g, b, a;
+    float r, g, b, a;
 
     for (int i = 0; i < w*h; ++i) {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
-        r = 255 * (c * std::pow((float)r / 255.0f, gamma));
-        g = 255 * (c * std::pow((float)g / 255.0f, gamma));
-        b = 255 * (c * std::pow((float)b / 255.0f, gamma));
+        r = 255 * (c * std::pow(r, gamma));
+        g = 255 * (c * std::pow(g, gamma));
+        b = 255 * (c * std::pow(b, gamma));
+        a = 255 * (a);
         
-        pixels[i] = r << 24 | g << 16 | b << 8 | a;
+        pixels[i] = (uint8_t)r << 24 | (uint8_t)g << 16 | (uint8_t)b << 8 | (uint8_t)a;
     }
 }
 
 void img_hide(uint32_t* pixels, int w, int h, const char* text)
 {
-    uint8_t r, g, b, a, c;
+    float r, g, b, a;
+    uint8_t ir, ig, ib, ia, c;
 
     size_t char_amt_supported = (float)w * h / 2;
     size_t char_amt_given = strlen(text);
@@ -593,19 +658,24 @@ void img_hide(uint32_t* pixels, int w, int h, const char* text)
         for (int j = 0; j < 2; ++j) {
             convert_hex_to_RGBA(pixels[i+j], &r, &g, &b, &a);
 
-            r = (r & 0xFE) | ((c >> 0x7) & 0x1);
+            ir = 255 * r;
+            ig = 255 * g;
+            ib = 255 * b;
+            ia = 255 * a;
+
+            ir = (ir & 0xFE) | ((c >> 0x7) & 0x1);
             c <<= 0x1;
             
-            g = (g & 0xFE) | ((c >> 0x7) & 0x1);
+            ig = (ig & 0xFE) | ((c >> 0x7) & 0x1);
             c <<= 0x1;
             
-            b = (b & 0xFE) | ((c >> 0x7) & 0x1);
+            ib = (ib & 0xFE) | ((c >> 0x7) & 0x1);
             c <<= 0x1;
             
-            a = (a & 0xFE) | ((c >> 0x7) & 0x1);
+            ia = (ia & 0xFE) | ((c >> 0x7) & 0x1);
             c <<= 0x1;
             
-            pixels[i+j] = r << 0x18 | g << 0x10 | b << 0x8 | a;
+            pixels[i+j] = ir << 0x18 | ig << 0x10 | ib << 0x8 | ia;
         }
 
         if (*text == '\0')
@@ -619,18 +689,23 @@ char* img_reveal(uint32_t* pixels, int w, int h)
 {
     char* revealed_text = (char*)malloc(MAX_STEG_TEXT * sizeof(char));
 
-    uint8_t r, g, b, a;
-    uint8_t current_char;
+    float r, g, b, a;
+    uint8_t ir, ig, ib, ia, current_char;
 
     for (int i = 0; i < MAX_STEG_TEXT; ++i) {
         current_char = 0;
         for (int j = 0; j < 2; ++j) {
             convert_hex_to_RGBA(pixels[(i*2)+j], &r, &g, &b, &a);
+
+            ir = 255 * r;
+            ig = 255 * g;
+            ib = 255 * b;
+            ia = 255 * a;
             
-            current_char = current_char << 0x1 | (r & 0x1);
-            current_char = current_char << 0x1 | (g & 0x1);
-            current_char = current_char << 0x1 | (b & 0x1);
-            current_char = current_char << 0x1 | (a & 0x1);
+            current_char = current_char << 0x1 | (ir & 0x1);
+            current_char = current_char << 0x1 | (ig & 0x1);
+            current_char = current_char << 0x1 | (ib & 0x1);
+            current_char = current_char << 0x1 | (ia & 0x1);
         }
 
         revealed_text[i] = (char)current_char;
@@ -644,29 +719,26 @@ char* img_reveal(uint32_t* pixels, int w, int h)
 
 void rgb2hsv(uint32_t hex_color, uint* h, uint* s, uint* v)
 {
-    uint8_t r, g, b, a;
-    float rl, gl, bl;
+    float r, g, b, a;
 
     convert_hex_to_RGBA(hex_color, &r, &g, &b, &a);
 
-    rl = r/255; gl = g/255; bl = b/255;
-
-    float cmax = std::fmax(rl, std::fmax(gl, bl));
-    float cmin = std::fmin(rl, std::fmin(gl, bl));
+    float cmax = std::fmax(r, std::fmax(g, b));
+    float cmin = std::fmin(r, std::fmin(g, b));
 
     float delta = cmax - cmin;
 
     if (delta == 0)
         *h = delta;
     
-    else if (cmax == rl)
-        *h = 60 * (fmod(((gl - bl) / delta), 6.0f));
+    else if (cmax == r)
+        *h = 60 * (fmod(((g - b) / delta), 6.0f));
     
-    else if (cmax == gl)
-        *h = 60 * (((bl - rl) / delta) + 2);
+    else if (cmax == g)
+        *h = 60 * (((b - r) / delta) + 2);
     
-    else if (cmax == bl)
-        *h = 60 * (((rl - gl) / delta) + 4);
+    else if (cmax == b)
+        *h = 60 * (((r - g) / delta) + 4);
 
     else
         *h = 0;
@@ -694,4 +766,42 @@ void space_out(int rep1, int rep2)
     
     for (int i = 0; i < rep2; ++i)
         ImGui::Spacing();
+}
+
+void generate_normalized_histogram(uint32_t* pixels, int w, int h)
+{
+    int tot_pixels = w*h;
+    float r, g, b, a;
+    uint8_t ir, ig, ib;
+
+    // zerar os histogramas atuais para gerar um novo
+    memset(hr, 0, sizeof(hr));
+    memset(hg, 0, sizeof(hg));
+    memset(hb, 0, sizeof(hb));
+
+    for (int i = 0; i < tot_pixels; ++i)
+    {
+        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
+
+        ir = 255 * r;
+        ig = 255 * g;
+        ib = 255 * b;
+
+        hr[ir]++;
+        hg[ig]++;
+        hb[ib]++;
+    }
+
+    for (int i = 0; i < 256; ++i)
+    {
+        hr[i] /= tot_pixels;
+        hg[i] /= tot_pixels;
+        hb[i] /= tot_pixels;
+    }
+
+    // Encontra o maior valor entre as 3 arrays a fim de escalar os histogramas com base no maior valor.
+    // como a dimensão dos valores é muito discrepante, o histograma na sua forma pura fica pouco
+    // representativo, então faço essa escala para refletir melhor os dados. A escala ocorre apenas na
+    // visualização, não nos dados
+    maxmax = std::fmax(array_max(hr), std::fmax(array_max(hg), array_max(hb)));;
 }
