@@ -41,7 +41,7 @@ bool remake_texture(SDL_Renderer* renderer, SDL_Texture** texture, int iw, int i
 bool init_SDL(SDL_DisplayMode* displayMode);
 
 // Auxiliary functions
-void generate_normalized_histogram(uint32_t* pixels, int w, int h);
+void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
 void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
@@ -73,6 +73,7 @@ T array_max(const T (&array)[N]) {
 
 // histogramas em RGB 
 float hr[256], hg[256], hb[256];
+float* histograms[3] = {hr, hg, hb};
 float maxmax;
 
 // Main code
@@ -183,10 +184,9 @@ int main(int, char**)
             ImGui::SetNextWindowSize(ImVec2(SIDEBAR_SIZE, imgAreaHeight-20));
             ImGui::Begin("Image Settings", NULL, ImGuiWindowFlags_NoCollapse);                          // Create a window called "Hello, world!" and append into it.
 
-            if (ImGui::CollapsingHeader("Load/Save Images")) {
-                file_dialog(renderer, &mainTexture, &pixels, &imgWidth, &imgHeight, &destRect, imgAreaWidth, imgAreaHeight);
-                img_save(pixels, imgWidth, imgHeight);
-            }
+            // load/save images
+            file_dialog(renderer, &mainTexture, &pixels, &imgWidth, &imgHeight, &destRect, imgAreaWidth, imgAreaHeight);
+            img_save(pixels, imgWidth, imgHeight);
 
             // ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
             // ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
@@ -253,13 +253,22 @@ int main(int, char**)
                 ImGui::Indent();
                 ImGui::BeginGroup();
 
-                if (ImGui::Button("Regenerate Histograms"))
+                if (ImGui::Button("Equalize RED"))
                 {
-                    generate_normalized_histogram(pixels, imgWidth, imgHeight);
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 0);
                 }
-
                 ImGui::PlotHistogram("HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+
+                if (ImGui::Button("Equalize GREEN"))
+                {
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 1);
+                }
                 ImGui::PlotHistogram("HistogramG", hg, IM_ARRAYSIZE(hg), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+
+                if (ImGui::Button("Equalize BLUE"))
+                {
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 2);
+                }
                 ImGui::PlotHistogram("HistogramB", hb, IM_ARRAYSIZE(hb), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
 
                 ImGui::EndGroup();
@@ -612,7 +621,9 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
 
     remake_texture(renderer, texture, *w, *h);
     
-    generate_normalized_histogram(*pixels, *w, *h);
+    generate_normalized_histogram(*pixels, *w, *h, 0);
+    generate_normalized_histogram(*pixels, *w, *h, 1);
+    generate_normalized_histogram(*pixels, *w, *h, 2);
 
     SDL_FreeSurface(imageSurface);
 
@@ -768,35 +779,36 @@ void space_out(int rep1, int rep2)
         ImGui::Spacing();
 }
 
-void generate_normalized_histogram(uint32_t* pixels, int w, int h)
+void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 {
     int tot_pixels = w*h;
     float r, g, b, a;
-    uint8_t ir, ig, ib;
+    uint8_t ind;
+
+    float* current_histogram = histograms[c];
 
     // zerar os histogramas atuais para gerar um novo
-    memset(hr, 0, sizeof(hr));
-    memset(hg, 0, sizeof(hg));
-    memset(hb, 0, sizeof(hb));
+    memset(current_histogram, 0, sizeof(hr));
+    // hr é o histograma em R (red), estou usando ele no sizeof pois se usar current_histogram
+    // o compilador reclama, já que current_histogram não tem tamanho definido em tempo de compilação
+    // já hr sim (current_histogram é o ponteiro que aponta para o início do vetor hr, e somente o vetor
+    // hr foi inicializado com a notação [], já que todos os histogramas tem o mesmo tamanho, não há
+    // mal em colocar o hr aqui)
 
     for (int i = 0; i < tot_pixels; ++i)
     {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
 
-        ir = 255 * r;
-        ig = 255 * g;
-        ib = 255 * b;
+        float colors[3] = {r, g, b};
 
-        hr[ir]++;
-        hg[ig]++;
-        hb[ib]++;
+        ind = 255 * colors[c];
+
+        current_histogram[ind]++;
     }
 
     for (int i = 0; i < 256; ++i)
     {
-        hr[i] /= tot_pixels;
-        hg[i] /= tot_pixels;
-        hb[i] /= tot_pixels;
+        current_histogram[i] /= tot_pixels;
     }
 
     // Encontra o maior valor entre as 3 arrays a fim de escalar os histogramas com base no maior valor.
