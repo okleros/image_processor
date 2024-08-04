@@ -22,7 +22,6 @@ Co-author: Unknown
 #include <string>
 #include <SDL.h>
 
-// test line
 
 #define MAX_STEG_TEXT 524288
 #define SIDEBAR_SIZE 360
