@@ -42,8 +42,10 @@ bool init_SDL(SDL_DisplayMode* displayMode);
 
 // Auxiliary functions
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
+void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
 void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
+uint32_t convert_RGBA_to_hex(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void space_out(int rep1 = 1, int rep2 = 1);
@@ -71,9 +73,16 @@ T array_max(const T (&array)[N]) {
     return *max_element_iter;
 }
 
+bool is_img_grayscale = true;
+
 // histogramas em RGB 
 float hr[256], hg[256], hb[256];
 float* histograms[3] = {hr, hg, hb};
+
+// CDFs de cada canal
+float CDFr[256], CDFg[256], CDFb[256];
+float* CDF[3] = {CDFr, CDFg, CDFb};
+
 float maxmax;
 
 // Main code
@@ -250,27 +259,40 @@ int main(int, char**)
             }
 
             if (ImGui::CollapsingHeader("Histogram Equalization")) {
+                if (ImGui::Button("Equalize Full Image"))
+                {
+                    generate_equalized_histogram(pixels, imgWidth, imgHeight, 0);
+                    generate_equalized_histogram(pixels, imgWidth, imgHeight, 1);
+                    generate_equalized_histogram(pixels, imgWidth, imgHeight, 2);
+                }
+
+                space_out(0, 0);
+
                 ImGui::Indent();
                 ImGui::BeginGroup();
+                if (!is_img_grayscale) {
+                    
+                    if (ImGui::Button("Equalize RED"))
+                    {
+                        generate_equalized_histogram(pixels, imgWidth, imgHeight, 0);
+                    }
+                    ImGui::PlotHistogram("HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
 
-                if (ImGui::Button("Equalize RED"))
-                {
-                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 0);
+                    if (ImGui::Button("Equalize GREEN"))
+                    {
+                        generate_equalized_histogram(pixels, imgWidth, imgHeight, 1);
+                    }
+                    ImGui::PlotHistogram("HistogramG", hg, IM_ARRAYSIZE(hg), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+
+                    if (ImGui::Button("Equalize BLUE"))
+                    {
+                        generate_equalized_histogram(pixels, imgWidth, imgHeight, 2);
+                    }
+                    ImGui::PlotHistogram("HistogramB", hb, IM_ARRAYSIZE(hb), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+                } else {
+                    ImGui::PlotHistogram("HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
                 }
-                ImGui::PlotHistogram("HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
-
-                if (ImGui::Button("Equalize GREEN"))
-                {
-                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 1);
-                }
-                ImGui::PlotHistogram("HistogramG", hg, IM_ARRAYSIZE(hg), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
-
-                if (ImGui::Button("Equalize BLUE"))
-                {
-                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 2);
-                }
-                ImGui::PlotHistogram("HistogramB", hb, IM_ARRAYSIZE(hb), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
-
+                
                 ImGui::EndGroup();
                 ImGui::Unindent();
             }
@@ -332,6 +354,11 @@ void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float
     *g = (color_hex >> 16 & 0xff) / 255.0f;
     *b = (color_hex >>  8 & 0xff) / 255.0f;
     *a = (color_hex >>  0 & 0xff) / 255.0f;
+}
+
+uint32_t convert_RGBA_to_hex(float r, float g, float b, float a)
+{
+    return ((int)(r*255) << 24) | ((int)(g*255) << 16) | ((int)(b*255) << 8) | (int)a*255;
 }
 
 void img_log(uint32_t* pixels, int w, int h, float c)
@@ -625,6 +652,18 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
     generate_normalized_histogram(*pixels, *w, *h, 1);
     generate_normalized_histogram(*pixels, *w, *h, 2);
 
+    float r, g, b, a;
+
+    is_img_grayscale = true; // If any pixel has equal R, G, B values, the image not BW
+    for (int i = 0; i < (*w) * (*h); ++i)
+    {
+        convert_hex_to_RGBA((*pixels)[i], &r, &g, &b, &a);
+
+        if (r != g || g != b || r != b) {
+            is_img_grayscale = false; // If any pixel has different R, G, B values, the image is not BW
+        }
+    }
+
     SDL_FreeSurface(imageSurface);
 
     return 1;
@@ -654,16 +693,12 @@ void img_hide(uint32_t* pixels, int w, int h, const char* text)
     size_t char_amt_supported = (float)w * h / 2;
     size_t char_amt_given = strlen(text);
 
-    printf("%ld\n", char_amt_given);
-
     if (strlen(text) > char_amt_supported) {
         printf("The image is not big enough for %ld characters as it only supports %ld. Consider changing your image to at least a %dx%d size image and try again.\n", char_amt_given, char_amt_supported, (int)std::round(std::sqrt(char_amt_given*2)), (int)std::round(std::sqrt(char_amt_given*2)));
 
         return;
     }
 
-    printf("%ld\n", char_amt_given);
-    
     for (int i = 0; i < w*h; i += 2) {
         c = *text;
         for (int j = 0; j < 2; ++j) {
@@ -816,4 +851,44 @@ void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
     // representativo, então faço essa escala para refletir melhor os dados. A escala ocorre apenas na
     // visualização, não nos dados
     maxmax = std::fmax(array_max(hr), std::fmax(array_max(hg), array_max(hb)));;
+}
+
+void generate_CDF(uint8_t c)
+{
+    float* current_histogram = histograms[c];
+    float* current_cdf = CDF[c];
+
+    current_cdf[0] = current_histogram[0];
+
+    for (int i = 1; i < 256; ++i)
+    {
+        current_cdf[i] = current_cdf[i-1] + current_histogram[i];
+    }
+}
+
+void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
+{
+    generate_normalized_histogram(pixels, w, h, c);
+    generate_CDF(c);
+
+    int tot_pixels = w * h;
+    float r, g, b, a;
+    float* current_cdf = CDF[c];
+
+    for (int i = 0; i < tot_pixels; ++i)
+    {
+        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
+
+        float colors[3] = { r, g, b };
+
+        uint8_t old_intensity = (uint8_t)(255 * colors[c]);
+        uint8_t new_intensity = (uint8_t)(current_cdf[old_intensity] * 255);
+
+        colors[c] = new_intensity / 255.0f;
+
+        // Reconstituir o pixel com os novos valores equalizados
+        pixels[i] = convert_RGBA_to_hex(colors[0], colors[1], colors[2], a);
+    }
+
+    generate_normalized_histogram(pixels, w, h, c);
 }
