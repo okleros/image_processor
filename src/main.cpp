@@ -296,7 +296,6 @@ int main(int, char**)
                     img_gamma(pixels, imgWidth, imgHeight, c_gamma, gamma);
 
                 ImGui::EndGroup();
-                // ImGui::Unindent();
             }
 
             if (ImGui::CollapsingHeader("Steganography")) {
