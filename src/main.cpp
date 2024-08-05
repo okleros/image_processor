@@ -20,6 +20,7 @@ Co-author: Unknown
 #include <cstring>
 #include <vector>
 #include <string>
+#include <stack>
 #include <SDL.h>
 
 
@@ -44,12 +45,14 @@ bool init_SDL(SDL_DisplayMode* displayMode);
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
-void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
 uint32_t convert_RGBA_to_hex(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
+void clear_stack(std::stack<uint32_t*>& stack);
 void space_out(int rep1 = 1, int rep2 = 1);
 void img_save(uint32_t* pixels, int width, int height);
+
 
 namespace fs = std::filesystem;
 
@@ -85,18 +88,23 @@ float* CDF[3] = {CDFr, CDFg, CDFb};
 
 float maxmax;
 
+std::stack<uint32_t*> undo_stack;
+std::stack<uint32_t*> redo_stack;
+std::stack<std::string> undo_log_stack;
+std::stack<std::string> redo_log_stack;
+
 // Main code
 int main(int, char**)
 {
 
     setbuf(stdout, NULL);
 
-    uint32_t* pixels;
+    uint32_t* pixels = nullptr;
     SDL_DisplayMode display;
 
-    SDL_Window* window;
-    SDL_Renderer* renderer;
-    SDL_Texture* mainTexture;
+    SDL_Window* window = nullptr;
+    SDL_Renderer* renderer = nullptr;
+    SDL_Texture* mainTexture = nullptr;
 
     SDL_Rect destRect;
 
@@ -166,6 +174,8 @@ int main(int, char**)
             graphData[i] = n * (r - b) + v + 2 * (b - a);
     }
 
+    std::string text;
+    
     // Main loop
     bool done = false;
     while (!done)
@@ -192,10 +202,46 @@ int main(int, char**)
             ImGui::SetNextWindowPos(ImVec2(imgAreaWidth, 0));
             ImGui::SetNextWindowSize(ImVec2(SIDEBAR_SIZE, imgAreaHeight-20));
             ImGui::Begin("Image Settings", NULL, ImGuiWindowFlags_NoCollapse);                          // Create a window called "Hello, world!" and append into it.
+            
+            space_out();
 
             // load/save images
             file_dialog(renderer, &mainTexture, &pixels, &imgWidth, &imgHeight, &destRect, imgAreaWidth, imgAreaHeight);
             img_save(pixels, imgWidth, imgHeight);
+
+            space_out();
+
+            if (ImGui::Button("Undo"))
+            {
+                if (!undo_stack.empty())
+                {
+                    redo_stack.push(pixels);
+                    pixels = undo_stack.top();
+                    undo_stack.pop();
+
+                    text = "[UNDO]: " + undo_log_stack.top();
+                    redo_log_stack.push(undo_log_stack.top());
+                    undo_log_stack.pop();
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Redo"))
+            {
+                if (!redo_stack.empty())
+                {
+                    undo_stack.push(pixels);
+                    pixels = redo_stack.top();
+                    redo_stack.pop();
+
+                    text = "[REDO]: " + redo_log_stack.top();
+                    undo_log_stack.push(redo_log_stack.top());
+                    redo_log_stack.pop();
+                }
+            }
+            ImGui::SameLine();
+            ImGui::Text(text.c_str(), 1000.0f / io.Framerate, io.Framerate);
+
+            space_out();
 
             // ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
             // ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
@@ -208,9 +254,14 @@ int main(int, char**)
                 // ImGui::Indent();
                 ImGui::BeginGroup();
 
-                if (ImGui::Button("B&W"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+                if (ImGui::Button("B&W")){                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_black_and_white(pixels, imgWidth, imgHeight);
-
+                
+                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                    {
+                        ImGui::SetTooltip("Select at least one difficulty");
+                    }
+                }
                 ImGui::SameLine();
                 if (ImGui::Button("B&W (Luminance)"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_black_and_white_lum(pixels, imgWidth, imgHeight);
@@ -290,7 +341,7 @@ int main(int, char**)
                     }
                     ImGui::PlotHistogram("HistogramB", hb, IM_ARRAYSIZE(hb), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
                 } else {
-                    ImGui::PlotHistogram("HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+                    ImGui::PlotHistogram("##HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
                 }
                 
                 ImGui::EndGroup();
@@ -348,6 +399,12 @@ int main(int, char**)
     return 0;
 }
 
+void clear_stack(std::stack<uint32_t*>& stack)
+{
+    std::stack<uint32_t*> empty;
+    std::swap(stack, empty);
+}
+
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a)
 {
     *r = (color_hex >> 24 & 0xff) / 255.0f;
@@ -365,8 +422,12 @@ void img_log(uint32_t* pixels, int w, int h, float c)
 {
     float r, g, b, a;
 
+    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+
     for (int i = 0; i < w*h; ++i)
     {
+        old_pixels[i] = pixels[i];
+
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
         // Aplica a transformação logarítmica
@@ -383,14 +444,21 @@ void img_log(uint32_t* pixels, int w, int h, float c)
         // Atribui os valores de volta ao pixel
         pixels[i] = (uint8_t)r << 24 | (uint8_t)g << 16 | (uint8_t)b << 8 | (uint8_t)a;
     }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("log transformation");
 }
 
 void img_negative(uint32_t* pixels, int w, int h)
 {
     float r, g, b, a;
 
+    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+
     for (int i = 0; i < w*h; ++i)
     {
+        old_pixels[i] = pixels[i];
+
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
 
         r = 255 * (1 - r);
@@ -400,6 +468,9 @@ void img_negative(uint32_t* pixels, int w, int h)
 
         pixels[i] = (uint8_t)r << 24 | (uint8_t)g << 16 | (uint8_t)b << 8 | (uint8_t)a;
     }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("negative");
 }
 
 void img_black_and_white(uint32_t* pixels, int w, int h)
@@ -407,8 +478,12 @@ void img_black_and_white(uint32_t* pixels, int w, int h)
     float r, g, b, a;
     int media;
 
+    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    
     for (int i = 0; i < w*h; ++i)
     {
+        old_pixels[i] = pixels[i];
+    
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
         media = 255 * ((r + g + b) / 3);
@@ -417,14 +492,21 @@ void img_black_and_white(uint32_t* pixels, int w, int h)
         
         pixels[i] = media << 24 | media << 16 | media << 8 | (uint8_t)a;
     }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("grayscale (no luminance)");
 }
 
 void img_black_and_white_lum(uint32_t* pixels, int w, int h)
 {
     float r, g, b, a;
 
+    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+
     for (int i = 0; i < w*h; ++i)
     {
+        old_pixels[i] = pixels[i];
+    
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
         int media = 255 * ((r * 0.3 + g * 0.59 + b * 0.11));
@@ -433,6 +515,9 @@ void img_black_and_white_lum(uint32_t* pixels, int w, int h)
         
         pixels[i] = media << 24 | media << 16 | media << 8 | (int)a;
     }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("grayscale (with luminance)");
 }
 
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah)
@@ -453,7 +538,10 @@ void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixel
                 // Se um arquivo ou diretório é selecionado, armazena o caminho absoluto
                 selectedFilePath = entry.path().c_str();
 
+                free(*pixels);
                 get_pixel_array_from_image(renderer, texture, selectedFilePath, pixels, w, h, destRect, iaw, iah);
+                clear_stack(undo_stack);
+                clear_stack(redo_stack);
 
                 ImGui::CloseCurrentPopup(); // Fecha o diálogo
                 goto exit_popup;
@@ -673,7 +761,11 @@ void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
 {
     float r, g, b, a;
 
+    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+
     for (int i = 0; i < w*h; ++i) {
+        old_pixels[i] = pixels[i];
+
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
         
         r = 255 * (c * std::pow(r, gamma));
@@ -683,6 +775,9 @@ void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
         
         pixels[i] = (uint8_t)r << 24 | (uint8_t)g << 16 | (uint8_t)b << 8 | (uint8_t)a;
     }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("gamma transformation");
 }
 
 void img_hide(uint32_t* pixels, int w, int h, const char* text)
@@ -868,6 +963,9 @@ void generate_CDF(uint8_t c)
 
 void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 {
+    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+
+    // primeira vez para fazer os cálculos
     generate_normalized_histogram(pixels, w, h, c);
     generate_CDF(c);
 
@@ -877,6 +975,8 @@ void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 
     for (int i = 0; i < tot_pixels; ++i)
     {
+        old_pixels[i] = pixels[i];
+
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
 
         float colors[3] = { r, g, b };
@@ -890,5 +990,17 @@ void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
         pixels[i] = convert_RGBA_to_hex(colors[0], colors[1], colors[2], a);
     }
 
+    undo_stack.push(old_pixels);
+
+    if (c == 0)
+        undo_log_stack.push("Equalize RED Histogram");
+
+    if (c == 1)
+        undo_log_stack.push("Equalize GREEN Histogram");
+
+    if (c == 2)
+        undo_log_stack.push("Equalize BLUE Histogram");
+
+    // gerando o histograma normalizado de novo para mostrar na GUI
     generate_normalized_histogram(pixels, w, h, c);
 }
