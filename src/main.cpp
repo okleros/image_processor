@@ -1,7 +1,7 @@
 /*
-KIPS - Kleros Image Processing Software. A poor clone of GIMP or any other Image manipulation
+KIMS - Kleros Image Manipularion Software. A poor clone of GIMP or any other Image manipulation
 software out there. Made entirely for a uni project, and definitely not intended to copy any other
-software at all 
+software at all (or be copied, this code sucks!)
 
 Author: Gutemberg Andrade 
 Co-author: Unknown 
@@ -44,9 +44,10 @@ bool init_SDL(SDL_DisplayMode* displayMode);
 // Auxiliary functions
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
+void check_if_image_is_grayscale(uint32_t* pixels, int w, int h);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
 uint32_t convert_RGBA_to_hex(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
-void convert_hex_to_RGBA(uint32_t color_hex, uint8_t* r, uint8_t* g, uint8_t* b, uint8_t* a);
+void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void clear_stack(std::stack<uint32_t*>& stack);
@@ -219,9 +220,11 @@ int main(int, char**)
                     pixels = undo_stack.top();
                     undo_stack.pop();
 
-                    text = "[UNDO]: " + undo_log_stack.top();
+                    text = "[UNDO] " + undo_log_stack.top();
                     redo_log_stack.push(undo_log_stack.top());
                     undo_log_stack.pop();
+
+                    check_if_image_is_grayscale(pixels, imgWidth, imgHeight);
                 }
             }
             ImGui::SameLine();
@@ -233,9 +236,11 @@ int main(int, char**)
                     pixels = redo_stack.top();
                     redo_stack.pop();
 
-                    text = "[REDO]: " + redo_log_stack.top();
+                    text = "[REDO] " + redo_log_stack.top();
                     undo_log_stack.push(redo_log_stack.top());
                     redo_log_stack.pop();
+
+                    check_if_image_is_grayscale(pixels, imgWidth, imgHeight);
                 }
             }
             ImGui::SameLine();
@@ -495,6 +500,8 @@ void img_black_and_white(uint32_t* pixels, int w, int h)
 
     undo_stack.push(old_pixels);
     undo_log_stack.push("grayscale (no luminance)");
+
+    is_img_grayscale = true;
 }
 
 void img_black_and_white_lum(uint32_t* pixels, int w, int h)
@@ -518,6 +525,8 @@ void img_black_and_white_lum(uint32_t* pixels, int w, int h)
 
     undo_stack.push(old_pixels);
     undo_log_stack.push("grayscale (with luminance)");
+    
+    is_img_grayscale = true;
 }
 
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah)
@@ -740,21 +749,26 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
     generate_normalized_histogram(*pixels, *w, *h, 1);
     generate_normalized_histogram(*pixels, *w, *h, 2);
 
+    check_if_image_is_grayscale(*pixels, *w, *h);
+
+    SDL_FreeSurface(imageSurface);
+
+    return 1;
+}
+
+void check_if_image_is_grayscale(uint32_t* pixels, int w, int h)
+{
     float r, g, b, a;
 
     is_img_grayscale = true; // If any pixel has equal R, G, B values, the image not BW
-    for (int i = 0; i < (*w) * (*h); ++i)
+    for (int i = 0; i < w * h; ++i)
     {
-        convert_hex_to_RGBA((*pixels)[i], &r, &g, &b, &a);
+        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
 
         if (r != g || g != b || r != b) {
             is_img_grayscale = false; // If any pixel has different R, G, B values, the image is not BW
         }
     }
-
-    SDL_FreeSurface(imageSurface);
-
-    return 1;
 }
 
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
