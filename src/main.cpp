@@ -48,6 +48,7 @@ void check_if_image_is_grayscale(uint32_t* pixels, int w, int h);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
 uint32_t convert_RGBA_to_hex(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a);
+void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void clear_stack(std::stack<uint32_t*>& stack);
@@ -224,6 +225,10 @@ int main(int, char**)
                     undo_log_stack.pop();
 
                     check_if_image_is_grayscale(pixels, imgWidth, imgHeight);
+
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 0);
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 1);
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 2);
                 }
             }
             ImGui::SameLine();
@@ -240,6 +245,10 @@ int main(int, char**)
                     redo_log_stack.pop();
 
                     check_if_image_is_grayscale(pixels, imgWidth, imgHeight);
+
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 0);
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 1);
+                    generate_normalized_histogram(pixels, imgWidth, imgHeight, 2);
                 }
             }
             ImGui::SameLine();
@@ -258,13 +267,9 @@ int main(int, char**)
                 // ImGui::Indent();
                 ImGui::BeginGroup();
 
+                space_out();
                 if (ImGui::Button("B&W")){                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_black_and_white(pixels, imgWidth, imgHeight);
-                
-                    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-                    {
-                        ImGui::SetTooltip("Select at least one difficulty");
-                    }
                 }
                 ImGui::SameLine();
                 if (ImGui::Button("B&W (Luminance)"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
@@ -273,6 +278,7 @@ int main(int, char**)
                 ImGui::SameLine();
                 if (ImGui::Button("Negative"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_negative(pixels, imgWidth, imgHeight);
+                space_out();
                 
                 static float c_log = 0;
                 ImGui::Text("c_log");
@@ -281,7 +287,15 @@ int main(int, char**)
                 ImGui::SameLine();
                 if (ImGui::Button("Log"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_log(pixels, imgWidth, imgHeight, c_log);
-     
+                space_out();
+                
+                static int threshold = 0;
+                ImGui::Text("threshold");
+                ImGui::DragInt("##threshold", &threshold, 1.0f, 0.0f, 255.0f);
+
+                ImGui::SameLine();
+                if (ImGui::Button("Threshold"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
+                    img_threshold(pixels, imgWidth, imgHeight, threshold);
                 space_out();
 
                 static float c_gamma = 0;
@@ -292,8 +306,10 @@ int main(int, char**)
                 ImGui::Text("gamma");
                 ImGui::DragFloat("##gamma", &gamma, 0.1f, 0.0f, 100.0f);
 
+                ImGui::SameLine();
                 if (ImGui::Button("Correct gamma"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_gamma(pixels, imgWidth, imgHeight, c_gamma, gamma);
+                space_out();
 
                 ImGui::EndGroup();
             }
@@ -450,6 +466,48 @@ void img_log(uint32_t* pixels, int w, int h, float c)
 
     undo_stack.push(old_pixels);
     undo_log_stack.push("log transformation");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
+}
+
+void img_threshold(uint32_t* pixels, int w, int h, uint8_t threshold)
+{
+    if (!is_img_grayscale)
+    {
+        printf("Image is not in grayscale!\n");
+    
+    } else {
+        float intensity, lixo;
+
+        uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+
+        for (int i = 0; i < w*h; ++i)
+        {
+            old_pixels[i] = pixels[i];
+
+            convert_hex_to_RGBA(pixels[i], &intensity, &lixo, &lixo, &lixo);
+            
+            if ((int)(intensity * 255.0f) < threshold)
+                intensity = 0;
+            else
+                intensity = 255;
+
+            // Atribui os valores de volta ao pixel
+            pixels[i] = (uint8_t)intensity << 24 | (uint8_t)intensity << 16 | (uint8_t)intensity << 8 | (uint8_t)intensity;
+        }
+
+        undo_stack.push(old_pixels);
+
+        std::string log_text = "thresholding by " + std::to_string(threshold);
+
+        undo_log_stack.push(log_text);
+    }
+
+    generate_normalized_histogram(pixels, w, h, 0);
 }
 
 void img_negative(uint32_t* pixels, int w, int h)
@@ -474,6 +532,10 @@ void img_negative(uint32_t* pixels, int w, int h)
 
     undo_stack.push(old_pixels);
     undo_log_stack.push("negative");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
 }
 
 void img_black_and_white(uint32_t* pixels, int w, int h)
@@ -500,6 +562,8 @@ void img_black_and_white(uint32_t* pixels, int w, int h)
     undo_log_stack.push("grayscale (no luminance)");
 
     is_img_grayscale = true;
+
+    generate_normalized_histogram(pixels, w, h, 0);
 }
 
 void img_black_and_white_lum(uint32_t* pixels, int w, int h)
@@ -525,6 +589,8 @@ void img_black_and_white_lum(uint32_t* pixels, int w, int h)
     undo_log_stack.push("grayscale (with luminance)");
     
     is_img_grayscale = true;
+
+    generate_normalized_histogram(pixels, w, h, 0);
 }
 
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah)
@@ -790,6 +856,10 @@ void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
 
     undo_stack.push(old_pixels);
     undo_log_stack.push("gamma transformation");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
 }
 
 void img_hide(uint32_t* pixels, int w, int h, const char* text)
@@ -1014,5 +1084,6 @@ void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
         undo_log_stack.push("Equalize BLUE Histogram");
 
     // gerando o histograma normalizado de novo para mostrar na GUI
+    generate_normalized_histogram(pixels, w, h, c);
     generate_normalized_histogram(pixels, w, h, c);
 }
