@@ -27,9 +27,16 @@ Co-author: Unknown
 #define MAX_STEG_TEXT 524288
 #define SIDEBAR_SIZE 360
 
+struct Kernel {
+    int size;        // The size of the Kernel, e.g. 3, for a 3x3 kernel.
+    float* elements; // Pointer to the Kernel elements
+};
+
 // Image functions
+void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 void img_black_and_white_lum(uint32_t* pixels, int w, int h);
 void img_black_and_white(uint32_t* pixels, int w, int h);
+void apply_convolution(uint32_t* pixels, int w, int h, Kernel k);
 void img_negative(uint32_t* pixels, int w, int h);
 char* img_reveal(uint32_t* pixels, int w, int h);
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma);
@@ -43,10 +50,9 @@ bool init_SDL(SDL_DisplayMode* displayMode);
 
 // Auxiliary functions
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
-void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 void check_if_image_is_grayscale(uint32_t* pixels, int w, int h);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
-uint32_t convert_RGBA_to_hex(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+uint32_t convert_RGBA_to_hex(float r, float g, float b, float a);
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a);
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
@@ -311,6 +317,18 @@ int main(int, char**)
                     img_gamma(pixels, imgWidth, imgHeight, c_gamma, gamma);
                 space_out();
 
+                float gx[9] = {
+    -1,   0,  1,
+    -2,   0,  2,
+    -1,   0,  1
+};
+                static Kernel k = {3, gx};
+
+                if (ImGui::Button("Convolve"))
+                {
+                    apply_convolution(pixels, imgWidth, imgHeight, k);
+                }
+
                 ImGui::EndGroup();
             }
 
@@ -331,9 +349,9 @@ int main(int, char**)
             if (ImGui::CollapsingHeader("Histogram Equalization")) {
                 if (ImGui::Button("Equalize Full Image"))
                 {
-                    generate_equalized_histogram(pixels, imgWidth, imgHeight, 0);
-                    generate_equalized_histogram(pixels, imgWidth, imgHeight, 1);
-                    generate_equalized_histogram(pixels, imgWidth, imgHeight, 2);
+                    img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 0);
+                    img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 1);
+                    img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 2);
                 }
 
                 space_out(0, 0);
@@ -344,19 +362,19 @@ int main(int, char**)
                     
                     if (ImGui::Button("Equalize RED"))
                     {
-                        generate_equalized_histogram(pixels, imgWidth, imgHeight, 0);
+                        img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 0);
                     }
                     ImGui::PlotHistogram("HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
 
                     if (ImGui::Button("Equalize GREEN"))
                     {
-                        generate_equalized_histogram(pixels, imgWidth, imgHeight, 1);
+                        img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 1);
                     }
                     ImGui::PlotHistogram("HistogramG", hg, IM_ARRAYSIZE(hg), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
 
                     if (ImGui::Button("Equalize BLUE"))
                     {
-                        generate_equalized_histogram(pixels, imgWidth, imgHeight, 2);
+                        img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 2);
                     }
                     ImGui::PlotHistogram("HistogramB", hb, IM_ARRAYSIZE(hb), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
                 } else {
@@ -441,7 +459,7 @@ void img_log(uint32_t* pixels, int w, int h, float c)
 {
     float r, g, b, a;
 
-    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = new uint32_t[w*h];//(uint32_t*)malloc(w * h * sizeof(uint32_t));
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -476,7 +494,7 @@ void img_log(uint32_t* pixels, int w, int h, float c)
 
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t threshold)
 {
-    if (!is_img_grayscale)
+    if (0)
     {
         printf("Image is not in grayscale!\n");
     
@@ -1043,7 +1061,7 @@ void generate_CDF(uint8_t c)
     }
 }
 
-void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
+void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 {
     uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
 
@@ -1086,4 +1104,64 @@ void generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
     // gerando o histograma normalizado de novo para mostrar na GUI
     generate_normalized_histogram(pixels, w, h, c);
     generate_normalized_histogram(pixels, w, h, c);
+}
+
+// Função para aplicar convolução em uma imagem RGBA
+void apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
+    int halfSize = k.size / 2;
+    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+
+    for (int i = 0; i < k.size*k.size; ++i)
+    {
+        printf("%f ", k.elements[i]);
+    }
+
+    // Iterar sobre cada pixel da imagem
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            old_pixels[y * w + x] = pixels[y * w + x];
+
+            float r = 0, g = 0, b = 0, a = 0;
+
+            // Aplicar o kernel
+            for (int ky = -halfSize; ky <= halfSize; ++ky) {
+                for (int kx = -halfSize; kx <= halfSize; ++kx) {
+                    int ix = x + kx;
+                    int iy = y + ky;
+
+                    // Verificar se estamos dentro dos limites da imagem
+                    if (ix >= 0 && ix < w && iy >= 0 && iy < h) {
+                        float kr = k.elements[(ky + halfSize) * k.size + (kx + halfSize)];
+                        
+                        float pr, pg, pb, pa;
+                        convert_hex_to_RGBA(old_pixels[iy * w + ix], &pr, &pg, &pb, &pa);
+
+                        r += pr * kr;
+                        g += pg * kr;
+                        b += pb * kr;
+                        a += pa * kr;
+                    }
+                }
+            }
+
+            // Clamping
+            r = std::min(std::max(r, 0.0f), 1.0f);
+            g = std::min(std::max(g, 0.0f), 1.0f);
+            b = std::min(std::max(b, 0.0f), 1.0f);
+            a = std::min(std::max(a, 0.0f), 1.0f);
+
+            // Converter de volta para hexadecimal e armazenar no array de saída
+            pixels[y * w + x] = convert_RGBA_to_hex(r, g, b, a);
+        }
+    }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("convolution");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
+
+    // Copiar o resultado de volta para os pixels originais
+    // std::copy(output.begin(), output.end(), pixels);
 }
