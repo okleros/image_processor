@@ -44,33 +44,33 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
 
 ## Implemented Functionalities
 
-- [x] negativo
-- [x] transformações logarítmicas
-- [x] potencia (gamma)
-- [ ] linear definida por partes
-- [x] esteganografia
-- [x] exibição histograma
-- [x] equalização histograma
-- [x] limiarização
-- [x] aplicação de filtro genérico por convolução
-- [x] filtro de suavização da média [simples e ponderada]
-- [ ] filtragem pela mediana
-- [x] aguçamento (nitidez) laplaciano
-- [x] aguçamento (nitidez) high boost
-- [x] filtros de sobel - x e y separados
-- [ ] detecção não linear de bordas pelo gradiente
-- [ ] calculo da trasformada de fourier
-- [ ] criar ferramenta para transformação entre sistemas de cores RGB <-> HSV
-- [ ] algoritmos de escala de cinza (média simples e ponderada)
-- [ ] negativo
-- [ ] chroma key
-- [x] suavização e aguçamento em imagens coloridas 1
-- [ ] equalização histograma em imagens coloridas (HSI)
-- [ ] ajuste de matiz, saturação e brilho
-- [ ] ajuste de canal (C/R, M/G, Y/B)
-- [ ] sépia (escala de cinza amarelada)
-- [ ] implementar escala pelo vizinho mais próximo e linear
-- [ ] implementar rotação pelo vizinho mais próximo e linear
+- [x] Negativo
+- [x] Transformações logarítmicas
+- [x] Potencia (gamma)
+- [ ] Linear definida por partes
+- [x] Esteganografia
+- [x] Exibição histograma
+- [x] Equalização histograma
+- [x] Limiarização
+- [x] Aplicação de filtro genérico por convolução
+- [x] Filtro de suavização da média [simples e ponderada]
+- [ ] Filtragem pela mediana
+- [x] Aguçamento (nitidez) laplaciano
+- [x] Aguçamento (nitidez) high boost
+- [x] Filtros de sobel - x e y separados
+- [ ] Detecção não linear de bordas pelo gradiente
+- [ ] Calculo da trasformada de fourier
+- [ ] Criar ferramenta para transformação entre sistemas de cores RGB <-> HSV
+- [ ] Algoritmos de escala de cinza (média simples e ponderada)
+- [ ] Negativo
+- [ ] Chroma key
+- [x] Suavização e aguçamento em imagens coloridas 1
+- [ ] Equalização histograma em imagens coloridas (HSI)
+- [ ] Ajuste de matiz, saturação e brilho
+- [ ] Ajuste de canal (C/R, M/G, Y/B)
+- [ ] Sépia (escala de cinza amarelada)
+- [ ] Escala pelo vizinho mais próximo e linear
+- [ ] Rotação pelo vizinho mais próximo e linear
 
 
 ## Supported Platforms
