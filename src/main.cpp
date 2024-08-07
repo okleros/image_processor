@@ -52,6 +52,8 @@ bool init_SDL(SDL_DisplayMode* displayMode);
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 void check_if_image_is_grayscale(uint32_t* pixels, int w, int h);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
+Kernel generate_gaussian_kernel(int size, float sigma);
+Kernel generate_average_kernel(int size);
 uint32_t convert_RGBA_to_hex(float r, float g, float b, float a);
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a);
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
@@ -163,7 +165,7 @@ int main(int, char**)
     ImGui_ImplSDLRenderer2_Init(renderer);
 
     // Our state 
-    bool show_demo_window = false;
+    bool show_demo_window = true;
 
     static std::vector<float> graphData(256, 0);
 
@@ -210,13 +212,13 @@ int main(int, char**)
             ImGui::SetNextWindowSize(ImVec2(SIDEBAR_SIZE, imgAreaHeight-20));
             ImGui::Begin("Image Settings", NULL, ImGuiWindowFlags_NoCollapse);                          // Create a window called "Hello, world!" and append into it.
             
-            space_out();
+            space_out(); //------------------------------------------------------------
 
             // load/save images
             file_dialog(renderer, &mainTexture, &pixels, &imgWidth, &imgHeight, &destRect, imgAreaWidth, imgAreaHeight);
             img_save(pixels, imgWidth, imgHeight);
 
-            space_out();
+            space_out(); //------------------------------------------------------------
 
             if (ImGui::Button("Undo"))
             {
@@ -260,7 +262,7 @@ int main(int, char**)
             ImGui::SameLine();
             ImGui::Text(text.c_str(), 1000.0f / io.Framerate, io.Framerate);
 
-            space_out();
+            space_out(); //------------------------------------------------------------
 
             // ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
             // ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
@@ -273,7 +275,7 @@ int main(int, char**)
                 // ImGui::Indent();
                 ImGui::BeginGroup();
 
-                space_out();
+                space_out(); //------------------------------------------------------------
                 if (ImGui::Button("B&W")){                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_black_and_white(pixels, imgWidth, imgHeight);
                 }
@@ -284,7 +286,7 @@ int main(int, char**)
                 ImGui::SameLine();
                 if (ImGui::Button("Negative"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_negative(pixels, imgWidth, imgHeight);
-                space_out();
+                space_out(); //------------------------------------------------------------
                 
                 static float c_log = 0;
                 ImGui::Text("c_log");
@@ -293,7 +295,7 @@ int main(int, char**)
                 ImGui::SameLine();
                 if (ImGui::Button("Log"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_log(pixels, imgWidth, imgHeight, c_log);
-                space_out();
+                space_out(); //------------------------------------------------------------
                 
                 static int threshold = 0;
                 ImGui::Text("threshold");
@@ -302,34 +304,93 @@ int main(int, char**)
                 ImGui::SameLine();
                 if (ImGui::Button("Threshold"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_threshold(pixels, imgWidth, imgHeight, threshold);
-                space_out();
+                space_out(); //------------------------------------------------------------
 
                 static float c_gamma = 0;
-                static float gamma = 0;
                 ImGui::Text("c_gamma");
                 ImGui::DragFloat("##c_gamma", &c_gamma, 0.1f, 0.0f, 100.0f);
 
+                static float gamma = 0;
                 ImGui::Text("gamma");
                 ImGui::DragFloat("##gamma", &gamma, 0.1f, 0.0f, 100.0f);
 
                 ImGui::SameLine();
                 if (ImGui::Button("Correct gamma"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_gamma(pixels, imgWidth, imgHeight, c_gamma, gamma);
-                space_out();
-
-                float gx[9] = {
-    -1,   0,  1,
-    -2,   0,  2,
-    -1,   0,  1
-};
-                static Kernel k = {3, gx};
-
-                if (ImGui::Button("Convolve"))
-                {
-                    apply_convolution(pixels, imgWidth, imgHeight, k);
-                }
+                space_out(); //------------------------------------------------------------
 
                 ImGui::EndGroup();
+            }
+
+            if (ImGui::CollapsingHeader("Convolution"))
+            {
+                space_out(); //------------------------------------------------------------
+
+                static int kernel_size = 3;
+                ImGui::InputInt("kernel size", &kernel_size, 2);
+                
+                static float std_dev = 1.0f;
+                ImGui::InputFloat("std dev", &std_dev);
+
+                if (ImGui::Button("Apply Gaussian Blur"))
+                {
+                    Kernel gk = generate_gaussian_kernel(kernel_size, std_dev);
+                    apply_convolution(pixels, imgWidth, imgHeight, gk);
+                }
+                space_out(); //------------------------------------------------------------
+
+                static int avg_kernel_size = 3;
+                ImGui::InputInt("avg kernel size", &avg_kernel_size, 2);
+
+                if (ImGui::Button("Apply Average Blur"))
+                {
+                    Kernel ak = generate_average_kernel(avg_kernel_size);
+                    apply_convolution(pixels, imgWidth, imgHeight, ak);
+                }
+                
+                space_out(); //------------------------------------------------------------
+                if (ImGui::Button("Apply Laplacian Filter"))
+                {
+                    float lk_elements[] = { 0, -1,  0,
+                                           -1,  5, -1, 
+                                            0, -1,  0};
+                    Kernel lk = {3, lk_elements};
+
+                    apply_convolution(pixels, imgWidth, imgHeight, lk);
+                }
+                
+                ImGui::SameLine();
+                if (ImGui::Button("Apply High Boost Filter"))
+                {
+                    float hbk_elements[] = {-1, -1, -1,
+                                            -1,  9, -1, 
+                                            -1, -1, -1};
+                    Kernel hbk = {3, hbk_elements};
+
+                    apply_convolution(pixels, imgWidth, imgHeight, hbk);
+                }
+                space_out(); //------------------------------------------------------------
+
+                if (ImGui::Button("Sobel X"))
+                {
+                    float sxk_elements[] = { 1,  0, -1,
+                                             2,  0, -2, 
+                                             1,  0, -1};
+                    Kernel sxk = {3, sxk_elements};
+
+                    apply_convolution(pixels, imgWidth, imgHeight, sxk);
+                }
+
+                if (ImGui::Button("Sobel Y"))
+                {
+                    float syk_elements[] = { 1,  2,  1,
+                                             0,  0,  0, 
+                                            -1, -2, -1};
+                    Kernel syk = {3, syk_elements};
+
+                    apply_convolution(pixels, imgWidth, imgHeight, syk);
+                }
+                space_out(); //------------------------------------------------------------
             }
 
             if (ImGui::CollapsingHeader("Steganography")) {
@@ -438,8 +499,10 @@ int main(int, char**)
 
 void clear_stack(std::stack<uint32_t*>& stack)
 {
-    std::stack<uint32_t*> empty;
-    std::swap(stack, empty);
+    while (!stack.empty()) {
+        free(stack.top());
+        stack.pop();
+    }
 }
 
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a)
@@ -459,7 +522,7 @@ void img_log(uint32_t* pixels, int w, int h, float c)
 {
     float r, g, b, a;
 
-    uint32_t* old_pixels = new uint32_t[w*h];//(uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -1106,21 +1169,71 @@ void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
     generate_normalized_histogram(pixels, w, h, c);
 }
 
+Kernel generate_gaussian_kernel(int size, float sigma) {
+    Kernel kernel;
+    if (size % 2 == 0) {
+        printf("Kernel size should be an odd number");
+        return kernel;
+    }
+
+    kernel.size = size;
+    kernel.elements = new float[size * size];
+    
+    float sum = 0.0f;
+    int half_size = size / 2;
+    float sigma_squared = sigma * sigma;
+    float two_sigma_squared = 2.0f * sigma_squared;
+    
+    for (int y = -half_size; y <= half_size; ++y) {
+        for (int x = -half_size; x <= half_size; ++x) {
+            float exponent = -(x * x + y * y) / two_sigma_squared;
+            float value = (1.0f / (2.0f * M_PI * sigma_squared)) * exp(exponent);
+            int index = (y + half_size) * size + (x + half_size);
+            kernel.elements[index] = value;
+            sum += value;
+        }
+    }
+
+    // Normalizar a matriz para que a soma dos valores seja 1
+    for (int i = 0; i < size * size; ++i) {
+        kernel.elements[i] /= sum;
+    }
+
+    return kernel;
+}
+
+Kernel generate_average_kernel(int size) {
+    Kernel kernel;
+    if (size % 2 == 0) {
+        printf("Kernel size should be an odd number");
+        return kernel;
+    }
+
+    kernel.size = size;
+    kernel.elements = new float[size * size];
+    
+    for (int i = 0; i < size*size; ++i)
+        kernel.elements[i] = 1.0f/(size*size);
+
+    return kernel;
+}
+
 // Função para aplicar convolução em uma imagem RGBA
 void apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
     int halfSize = k.size / 2;
+
     uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
 
-    for (int i = 0; i < k.size*k.size; ++i)
-    {
-        printf("%f ", k.elements[i]);
+    if (old_pixels == nullptr) {
+        // Lidar com erro de alocação de memória
+        return;
     }
 
-    // Iterar sobre cada pixel da imagem
-    for (int y = 0; y < h; ++y) {
-        for (int x = 0; x < w; ++x) {
-            old_pixels[y * w + x] = pixels[y * w + x];
+    memcpy(old_pixels, pixels, w * h * sizeof(uint32_t));
 
+    // Iterar sobre cada pixel da imagem
+    for (int x = 0; x < w; ++x) {
+        for (int y = 0; y < h; ++y) {
             float r = 0, g = 0, b = 0, a = 0;
 
             // Aplicar o kernel
