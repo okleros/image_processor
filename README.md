@@ -42,6 +42,37 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
    ```
 2. Use KIMS for various image manipulation tasks similar to GIMP, but with a simpler interface.
 
+## Implemented Functionalities
+
+- [x] negativo
+- [x] transformações logarítmicas
+- [x] potencia (gamma)
+- [ ] linear definida por partes
+- [x] esteganografia
+- [x] exibição histograma
+- [x] equalização histograma
+- [x] limiarização
+- [x] aplicação de filtro genérico por convolução
+- [x] filtro de suavização da média [simples e ponderada]
+- [ ] filtragem pela mediana
+- [x] aguçamento (nitidez) laplaciano
+- [x] aguçamento (nitidez) high boost
+- [x] filtros de sobel - x e y separados
+- [ ] detecção não linear de bordas pelo gradiente
+- [ ] calculo da trasformada de fourier
+- [ ] criar ferramenta para transformação entre sistemas de cores RGB <-> HSV
+- [ ] algoritmos de escala de cinza (média simples e ponderada)
+- [ ] negativo
+- [ ] chroma key
+- [x] suavização e aguçamento em imagens coloridas 1
+- [ ] equalização histograma em imagens coloridas (HSI)
+- [ ] ajuste de matiz, saturação e brilho
+- [ ] ajuste de canal (C/R, M/G, Y/B)
+- [ ] sépia (escala de cinza amarelada)
+- [ ] implementar escala pelo vizinho mais próximo e linear
+- [ ] implementar rotação pelo vizinho mais próximo e linear
+
+
 ## Supported Platforms
 
 KIMS is cross-platform and can run on Windows, macOS, and Linux. However, ensure you have the required dependencies installed for your platform.

@@ -55,7 +55,10 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
 Kernel generate_gaussian_kernel(int size, float sigma);
 Kernel generate_average_kernel(int size);
 uint32_t convert_RGBA_to_hex(float r, float g, float b, float a);
+void createOrResizeKernel(Kernel& kernel, int newSize);
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a);
+ImU32 value_to_color(float value, float clamp);
+void show_kernel_table(Kernel& kernel, const char* label, float clamp);
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
@@ -186,6 +189,8 @@ int main(int, char**)
 
     std::string text;
     
+    Kernel generic_kernel = {3, new float[9]{-10, -10, -10, 0, 0, 0, 10, 10, 10}};
+
     // Main loop
     bool done = false;
     while (!done)
@@ -325,48 +330,75 @@ int main(int, char**)
             if (ImGui::CollapsingHeader("Convolution"))
             {
                 space_out(); //------------------------------------------------------------
+                static int newSize = generic_kernel.size;
+                static float data_magnitude = 1;
+                // Input field to adjust the kernel size
+                ImGui::InputInt("Kernel Size", &newSize, 2);
+                ImGui::InputFloat("Data magnitude", &data_magnitude, 0.1f, 1.0f);
+
+                // Resize the kernel if the size has changed
+                if (newSize != generic_kernel.size) {
+                    createOrResizeKernel(generic_kernel, newSize);
+                }
+
+                show_kernel_table(generic_kernel, "generic_kernel", data_magnitude);
+
+                if (ImGui::Button("Apply Generic Convolution"))
+                {
+                    apply_convolution(pixels, imgWidth, imgHeight, generic_kernel);
+                }
+                space_out(); //------------------------------------------------------------
 
                 static int kernel_size = 3;
                 ImGui::InputInt("kernel size", &kernel_size, 2);
                 
                 static float std_dev = 1.0f;
-                ImGui::InputFloat("std dev", &std_dev);
+                ImGui::InputFloat("std dev", &std_dev, 0.5f, 2.0f);
+                Kernel gk = generate_gaussian_kernel(kernel_size, std_dev);
 
+                static float g_data_magnitude = 0.2f;
+                ImGui::InputFloat("GData mag", &g_data_magnitude, 0.05f, 1.0f);
                 if (ImGui::Button("Apply Gaussian Blur"))
                 {
-                    Kernel gk = generate_gaussian_kernel(kernel_size, std_dev);
                     apply_convolution(pixels, imgWidth, imgHeight, gk);
+                }
+                static bool show_gaussian_kernel = false;
+                ImGui::SameLine();
+                ImGui::Checkbox("View Gaussian Kernel", &show_gaussian_kernel);
+                if (show_gaussian_kernel)
+                {
+                    show_kernel_table(gk, "gaussian_kernel", g_data_magnitude);
                 }
                 space_out(); //------------------------------------------------------------
 
                 static int avg_kernel_size = 3;
                 ImGui::InputInt("avg kernel size", &avg_kernel_size, 2);
+                Kernel ak = generate_average_kernel(avg_kernel_size);
 
                 if (ImGui::Button("Apply Average Blur"))
                 {
-                    Kernel ak = generate_average_kernel(avg_kernel_size);
                     apply_convolution(pixels, imgWidth, imgHeight, ak);
                 }
-                
                 space_out(); //------------------------------------------------------------
+
+                float lk_elements[] = { 0, -1,  0,
+                                       -1,  5, -1, 
+                                        0, -1,  0};
+                Kernel lk = {3, lk_elements};
+
                 if (ImGui::Button("Apply Laplacian Filter"))
                 {
-                    float lk_elements[] = { 0, -1,  0,
-                                           -1,  5, -1, 
-                                            0, -1,  0};
-                    Kernel lk = {3, lk_elements};
-
                     apply_convolution(pixels, imgWidth, imgHeight, lk);
                 }
+                
+                float hbk_elements[] = {-1, -1, -1,
+                                        -1,  9, -1, 
+                                        -1, -1, -1};
+                Kernel hbk = {3, hbk_elements};
                 
                 ImGui::SameLine();
                 if (ImGui::Button("Apply High Boost Filter"))
                 {
-                    float hbk_elements[] = {-1, -1, -1,
-                                            -1,  9, -1, 
-                                            -1, -1, -1};
-                    Kernel hbk = {3, hbk_elements};
-
                     apply_convolution(pixels, imgWidth, imgHeight, hbk);
                 }
                 space_out(); //------------------------------------------------------------
@@ -1218,6 +1250,55 @@ Kernel generate_average_kernel(int size) {
     return kernel;
 }
 
+// Function to create or resize the kernel
+void createOrResizeKernel(Kernel& kernel, int newSize) {
+    if (newSize % 2 == 0) {
+        newSize += 1; // Ensure the size is odd
+    }
+    if (kernel.size != newSize) {
+        kernel.size = newSize;
+        delete[] kernel.elements;
+        kernel.elements = new float[newSize * newSize];
+        std::fill(kernel.elements, kernel.elements + newSize * newSize, 0.0f);
+    }
+}
+
+// Function to display and edit the kernel in an ImGui table
+void show_kernel_table(Kernel& kernel, const char* label, float clamp) {
+    ImGuiTableFlags flags = ImGuiTableFlags_Borders | ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX;
+
+    // Push style var to change cell padding
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.0f, 0.0f)); // Set both x and y padding to 0
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 10.0f)); // Set frame padding to 0 for tighter fit
+
+    // Create a table with the given size
+    if (ImGui::BeginTable(label, kernel.size, flags)) {
+        for (int row = 0; row < kernel.size; ++row) {
+            ImGui::TableNextRow();
+            for (int col = 0; col < kernel.size; ++col) {
+                ImGui::TableSetColumnIndex(col);
+
+                // Get the index in the 1D kernel array
+                int index = row * kernel.size + col;
+
+                ImU32 color = value_to_color(kernel.elements[index], clamp);
+                // Aplicar a cor de fundo
+                ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, color);
+                
+                // Center align the text
+                ImGui::PushItemWidth(ImGui::GetFontSize() * 2.8f);
+                // ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetColumnWidth() - ImGui::CalcTextSize("0.000").x) * 0.5f);
+                ImGui::DragFloat(("##element" + std::to_string(index)).c_str(), &kernel.elements[index], 0.1f, -FLT_MAX, FLT_MAX, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+                ImGui::PopItemWidth();
+            }
+        }
+        ImGui::EndTable();
+    }
+
+    // Pop style var to restore previous cell padding
+    ImGui::PopStyleVar(2); // Pop both CellPadding and FramePadding
+}
+
 // Função para aplicar convolução em uma imagem RGBA
 void apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
     int halfSize = k.size / 2;
@@ -1277,4 +1358,35 @@ void apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
 
     // Copiar o resultado de volta para os pixels originais
     // std::copy(output.begin(), output.end(), pixels);
+}
+
+ImU32 value_to_color(float value, float clamp) {
+    float normalized_value;
+    ImVec4 color;
+
+    if (value == 0.0f) {
+        // Preto para zero
+        color = ImVec4(0.0f, 0.0f, 0.0f, 1.0f); // Preto
+    } else if (value > 0) {
+        // Valor positivo (verde a preto)
+        normalized_value = std::clamp(value / clamp, 0.0f, 1.0f); // Normaliza entre 0 e 1
+
+        // Interpolação entre verde e preto
+        color = ImVec4(0.0f, normalized_value, 0.0f, 1.0f); // Verde para preto
+    } else {
+        // Valor negativo (preto a vermelho)
+        normalized_value = std::clamp(-value / clamp, 0.0f, 1.0f); // Normaliza entre 0 e 1
+
+        // Interpolação entre preto e vermelho
+        color = ImVec4(normalized_value, 0.0f, 0.0f, 1.0f); // Preto para vermelho
+    }
+
+    // Converter a cor de RGBA para hexadecimal
+    // if (value < 0)
+    // {
+    //     std::cout << std::hex << convert_RGBA_to_hex(color.x, color.y, color.z, color.w) << std::endl;
+    // }
+
+    ImU32 cell_bg_color = ImGui::GetColorU32(color);
+    return cell_bg_color;
 }
