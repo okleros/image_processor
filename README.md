@@ -67,7 +67,7 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
 - [x] Suavização e aguçamento em imagens coloridas
 - [x] Equalização histograma em imagens coloridas (HSI)
 - [x] Ajuste de matiz, saturação e brilho
-- [ ] Ajuste de canal (C/R, M/G, Y/B)
+- [x] Ajuste de canal (C/R, M/G, Y/B)
 - [ ] Sépia (escala de cinza amarelada)
 - [ ] Escala pelo vizinho mais próximo e linear
 - [ ] Rotação pelo vizinho mais próximo e linear

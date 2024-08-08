@@ -42,6 +42,7 @@ void img_black_and_white(uint32_t* pixels, int w, int h);
 void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int h, uint32_t key_color, float tolerance);
 void adjust_brightness(float* i, float brightness_factor);
 void adjust_saturation(float* s, float saturation_factor);
+void adjust_channels(uint32_t* pixels, int w, int h, float cr_factor, float mg_factor, float yb_factor);
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void img_negative(uint32_t* pixels, int w, int h);
 void adjust_image(uint32_t* pixels, int w, int h, float hue_shift, float saturation_factor, float brightness_factor);
@@ -147,7 +148,7 @@ int main(int, char**)
     destRect = { 0, 0, imgWidth, imgHeight};
 
     // Create pixel array to hold pixel data
-    pixels = (uint32_t*)malloc(imgWidth * imgHeight * sizeof(uint32_t));
+    pixels = new uint32_t[imgWidth*imgHeight];
     if (pixels == NULL) {
         printf("Unable to allocate memory for pixel array!\n");
         return 1;
@@ -339,7 +340,6 @@ int main(int, char**)
 
                 static float hue_shift = 0, saturation_factor = 1, brightness_factor = 1;
 
-
                 ImGui::SliderFloat("Hue", &hue_shift, 0.0f, 1.0f, "Hue: %.3f");
                 ImGui::SliderFloat("Saturation", &saturation_factor, 0.0f, 2.0f, "Saturation: %.3f");
                 ImGui::SliderFloat("Brightness", &brightness_factor, 0.0f, 2.0f, "Brightness: %.3f");
@@ -348,6 +348,18 @@ int main(int, char**)
                 {
                     adjust_image(pixels, imgWidth, imgHeight, hue_shift, saturation_factor, brightness_factor);
                 }
+                space_out(); //------------------------------------------------------------
+                static float cr_factor = 1, mg_factor = 1, yb_factor = 1;
+                
+                ImGui::SliderFloat("C/R", &cr_factor, 0.0f, 2.0f, "cr_factor: %.3f");
+                ImGui::SliderFloat("M/G", &mg_factor, 0.0f, 2.0f, "mg_factor: %.3f");
+                ImGui::SliderFloat("Y/B", &yb_factor, 0.0f, 2.0f, "yb_factor: %.3f");
+
+                if (ImGui::Button("Adjust channels"))
+                {
+                    adjust_channels(pixels, imgWidth, imgHeight, cr_factor, mg_factor, yb_factor);
+                }
+                space_out(); //------------------------------------------------------------
 
                 ImGui::EndGroup();
             }
@@ -704,7 +716,7 @@ void img_log(uint32_t* pixels, int w, int h, float c)
 {
     float r, g, b, a;
 
-    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = new uint32_t[w*h];
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -745,7 +757,7 @@ void img_threshold(uint32_t* pixels, int w, int h, uint8_t threshold)
     } else {
         float intensity, lixo;
 
-        uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+        uint32_t* old_pixels = new uint32_t[w*h];
 
         for (int i = 0; i < w*h; ++i)
         {
@@ -776,7 +788,7 @@ void img_negative(uint32_t* pixels, int w, int h)
 {
     float r, g, b, a;
 
-    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = new uint32_t[w*h];
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -806,7 +818,7 @@ void img_black_and_white(uint32_t* pixels, int w, int h)
     float r, g, b, a;
     int media;
 
-    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = new uint32_t[w*h];
     
     for (int i = 0; i < w*h; ++i)
     {
@@ -833,7 +845,7 @@ void img_black_and_white_lum(uint32_t* pixels, int w, int h)
 {
     float r, g, b, a;
 
-    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = new uint32_t[w*h];
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -1089,7 +1101,7 @@ uint32_t* get_pixel_array(const char* img, int* w, int* h)
     *w = imageSurface->w;
     *h = imageSurface->h;
 
-    uint32_t* pixels = (uint32_t*)malloc((*w) * (*h) * sizeof(uint32_t));
+    uint32_t* pixels = new uint32_t[(*w) * (*h)];
 
     // Extract pixel data from image surface
     SDL_LockSurface(imageSurface);
@@ -1116,7 +1128,7 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
 
     *rect = { iaw/2 - *w/2, iah/2 - *h/2, *w, *h };
 
-    *pixels = (uint32_t*)malloc((*w) * (*h) * sizeof(uint32_t));
+    *pixels = new uint32_t[(*w) * (*h)];
 
     // Extract pixel data from image surface
     SDL_LockSurface(imageSurface);
@@ -1156,7 +1168,7 @@ void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
 {
     float r, g, b, a;
 
-    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = new uint32_t[w*h];
 
     for (int i = 0; i < w*h; ++i) {
         old_pixels[i] = pixels[i];
@@ -1228,7 +1240,7 @@ void img_hide(uint32_t* pixels, int w, int h, const char* text)
 
 char* img_reveal(uint32_t* pixels, int w, int h)
 {
-    char* revealed_text = (char*)malloc(MAX_STEG_TEXT * sizeof(char));
+    char* revealed_text = new char[MAX_STEG_TEXT];
 
     float r, g, b, a;
     uint8_t ir, ig, ib, ia, current_char;
@@ -1435,7 +1447,7 @@ uint32_t hsi2rgb(float h, float s, float i) {
 
 void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 {
-    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = new uint32_t[w*h];
     memcpy(old_pixels, pixels, w*h*sizeof(uint32_t));
 
     // primeira vez para fazer os cálculos
@@ -1588,7 +1600,7 @@ void show_kernel_table(Kernel& kernel, const char* label, float clamp) {
 void img_apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
     int halfSize = k.size / 2;
 
-    uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    uint32_t* old_pixels = new uint32_t[w*h];
 
     if (old_pixels == nullptr) {
         // Lidar com erro de alocação de memória
@@ -1881,7 +1893,12 @@ void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int
 }
 
 void adjust_image(uint32_t* pixels, int w, int h, float hue_shift, float saturation_factor, float brightness_factor) {
-    for (int i = 0; i < w*h; ++i) {
+    int num_pixels = w*h;
+
+    uint32_t* old_pixels = new uint32_t[num_pixels];
+    memcpy(old_pixels, pixels, num_pixels * sizeof(uint32_t));
+
+    for (int i = 0; i < num_pixels; ++i) {
         // Converter RGB para HSI
         float hh, ss, ii;
         rgb2hsi(pixels[i], &hh, &ss, &ii);
@@ -1894,6 +1911,14 @@ void adjust_image(uint32_t* pixels, int w, int h, float hue_shift, float saturat
         // Converter HSI de volta para RGB e atualizar o pixel
         pixels[i] = hsi2rgb(hh, ss, ii);
     }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("HSI adjustment");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
 }
 
 void adjust_hue(float* h, float hue_shift) {
@@ -1923,3 +1948,35 @@ void adjust_brightness(float* i, float brightness_factor) {
     }
 }
 
+void adjust_channels(uint32_t* pixels, int w, int h, float cr_factor, float mg_factor, float yb_factor) {
+    int num_pixels = w * h;
+
+    uint32_t* old_pixels = new uint32_t[num_pixels];
+    memcpy(old_pixels, pixels, num_pixels * sizeof(uint32_t));
+
+    for (int i = 0; i < num_pixels; ++i) {
+        float r, g, b, a;
+        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
+
+        // Ajustes de canal
+        r *= cr_factor; // Ajuste de Vermelho
+        g *= mg_factor; // Ajuste de Verde
+        b *= yb_factor; // Ajuste de Azul
+
+        // Clamping para manter os valores dentro do intervalo [0, 1]
+        r = std::fmax(0.0f, std::fmin(1.0f, r));
+        g = std::fmax(0.0f, std::fmin(1.0f, g));
+        b = std::fmax(0.0f, std::fmin(1.0f, b));
+
+        // Converter de volta para o formato uint32_t e atualizar o pixel
+        pixels[i] = convert_RGBA_to_hex(r, g, b, a);
+    }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("channel adjustment");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
+}
