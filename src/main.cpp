@@ -47,6 +47,7 @@ void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void img_negative(uint32_t* pixels, int w, int h);
 void adjust_image(uint32_t* pixels, int w, int h, float hue_shift, float saturation_factor, float brightness_factor);
 char* img_reveal(uint32_t* pixels, int w, int h);
+void apply_sepia(uint32_t* image, int w, int h);
 void adjust_hue(float* h, float hue_shift);
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma);
 void img_hide(uint32_t* pixels, int w, int h, const char* text);
@@ -358,6 +359,11 @@ int main(int, char**)
                 if (ImGui::Button("Adjust channels"))
                 {
                     adjust_channels(pixels, imgWidth, imgHeight, cr_factor, mg_factor, yb_factor);
+                }
+                space_out(); //------------------------------------------------------------
+                if (ImGui::Button("Apply sepia"))
+                {
+                    apply_sepia(pixels, imgWidth, imgHeight);
                 }
                 space_out(); //------------------------------------------------------------
 
@@ -1890,6 +1896,39 @@ void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int
     generate_normalized_histogram(foreground, w, h, 1);
     generate_normalized_histogram(foreground, w, h, 2);
     generate_normalized_histogram(foreground, w, h, 3);
+}
+
+void apply_sepia(uint32_t* pixels, int w, int h) {
+    int num_pixels = w*h;
+
+    uint32_t* old_pixels = new uint32_t[num_pixels];
+    memcpy(old_pixels, pixels, num_pixels * sizeof(uint32_t));
+
+    for (int i = 0; i < num_pixels; ++i) {
+        float r, g, b, a;
+        convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
+
+        // Aplicar a transformação sépia
+        float tr = 0.393f * r + 0.769f * g + 0.189f * b;
+        float tg = 0.349f * r + 0.686f * g + 0.168f * b;
+        float tb = 0.272f * r + 0.534f * g + 0.131f * b;
+
+        // Clamping para manter os valores dentro do intervalo [0, 1]
+        r = std::fmin(1.0f, tr);
+        g = std::fmin(1.0f, tg);
+        b = std::fmin(1.0f, tb);
+
+        // Converter de volta para o formato uint32_t e atualizar o pixel
+        pixels[i] = convert_RGBA_to_hex(r, g, b, a);
+    }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("sepia");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
 }
 
 void adjust_image(uint32_t* pixels, int w, int h, float hue_shift, float saturation_factor, float brightness_factor) {
