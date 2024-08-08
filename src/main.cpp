@@ -55,6 +55,7 @@ bool init_SDL(SDL_DisplayMode* displayMode);
 // Auxiliary functions
 
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
+float pixel_RGBA_to_grayscale_lum(uint32_t pixel);
 void check_if_image_is_grayscale(uint32_t* pixels, int w, int h);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
 Kernel generate_gaussian_kernel(int size, float sigma);
@@ -70,9 +71,10 @@ void file_dialog_2(char* buf);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void clear_stack(std::stack<uint32_t*>& stack);
+uint32_t hsi2rgb(float h, float s, float i);
 void space_out(int rep1 = 1, int rep2 = 1);
 void img_save(uint32_t* pixels, int width, int height);
-
+void rgb2hsi(uint32_t rgb, float* h, float* s, float* i);
 
 namespace fs = std::filesystem;
 
@@ -99,12 +101,12 @@ T array_max(const T (&array)[N]) {
 bool is_img_grayscale = true;
 
 // histogramas em RGB 
-float hr[256], hg[256], hb[256];
-float* histograms[3] = {hr, hg, hb};
+float hr[256], hg[256], hb[256], hi[256];
+float* histograms[4] = {hr, hg, hb, hi};
 
 // CDFs de cada canal
-float CDFr[256], CDFg[256], CDFb[256];
-float* CDF[3] = {CDFr, CDFg, CDFb};
+float CDFr[256], CDFg[256], CDFb[256], CDFi[256];
+float* CDF[4] = {CDFr, CDFg, CDFb, CDFi};
 
 float maxmax;
 
@@ -570,9 +572,7 @@ int main(int, char**)
             if (ImGui::CollapsingHeader("Histogram Equalization")) {
                 if (ImGui::Button("Equalize Full Image"))
                 {
-                    img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 0);
-                    img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 1);
-                    img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 2);
+                    img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 3);
                 }
 
                 space_out(0, 0);
@@ -598,8 +598,14 @@ int main(int, char**)
                         img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 2);
                     }
                     ImGui::PlotHistogram("HistogramB", hb, IM_ARRAYSIZE(hb), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+
+                    if (ImGui::Button("Equalize I"))
+                    {
+                        img_generate_equalized_histogram(pixels, imgWidth, imgHeight, 3);
+                    }
+                    ImGui::PlotHistogram("##HistogramI", hi, IM_ARRAYSIZE(hi), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
                 } else {
-                    ImGui::PlotHistogram("##HistogramR", hr, IM_ARRAYSIZE(hr), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
+                    ImGui::PlotHistogram("##HistogramI", hi, IM_ARRAYSIZE(hi), 0, NULL, 0.0f, maxmax, ImVec2(0,160));
                 }
                 
                 ImGui::EndGroup();
@@ -710,9 +716,8 @@ void img_log(uint32_t* pixels, int w, int h, float c)
 
     generate_normalized_histogram(pixels, w, h, 0);
     generate_normalized_histogram(pixels, w, h, 1);
-    generate_normalized_histogram(pixels, w, h, 2);generate_normalized_histogram(pixels, w, h, 0);
-    generate_normalized_histogram(pixels, w, h, 1);
     generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
 }
 
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t threshold)
@@ -777,6 +782,7 @@ void img_negative(uint32_t* pixels, int w, int h)
     generate_normalized_histogram(pixels, w, h, 0);
     generate_normalized_histogram(pixels, w, h, 1);
     generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
 }
 
 void img_black_and_white(uint32_t* pixels, int w, int h)
@@ -1106,6 +1112,7 @@ bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, c
     generate_normalized_histogram(*pixels, *w, *h, 0);
     generate_normalized_histogram(*pixels, *w, *h, 1);
     generate_normalized_histogram(*pixels, *w, *h, 2);
+    generate_normalized_histogram(*pixels, *w, *h, 3);
 
     check_if_image_is_grayscale(*pixels, *w, *h);
 
@@ -1154,6 +1161,7 @@ void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma)
     generate_normalized_histogram(pixels, w, h, 0);
     generate_normalized_histogram(pixels, w, h, 1);
     generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
 }
 
 void img_hide(uint32_t* pixels, int w, int h, const char* text)
@@ -1301,7 +1309,7 @@ void space_out(int rep1, int rep2)
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 {
     int tot_pixels = w*h;
-    float r, g, b, a;
+    float r, g, b, a, intensity;
     uint8_t ind;
 
     float* current_histogram = histograms[c];
@@ -1313,12 +1321,12 @@ void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
     // já hr sim (current_histogram é o ponteiro que aponta para o início do vetor hr, e somente o vetor
     // hr foi inicializado com a notação [], já que todos os histogramas tem o mesmo tamanho, não há
     // mal em colocar o hr aqui)
-
     for (int i = 0; i < tot_pixels; ++i)
     {
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
+        intensity = pixel_RGBA_to_grayscale(pixels[i]);
 
-        float colors[3] = {r, g, b};
+        float colors[4] = {r, g, b, intensity};
 
         ind = 255 * colors[c];
 
@@ -1334,7 +1342,7 @@ void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
     // como a dimensão dos valores é muito discrepante, o histograma na sua forma pura fica pouco
     // representativo, então faço essa escala para refletir melhor os dados. A escala ocorre apenas na
     // visualização, não nos dados
-    maxmax = std::fmax(array_max(hr), std::fmax(array_max(hg), array_max(hb)));;
+    maxmax = std::fmax(std::fmax(array_max(hr), std::fmax(array_max(hg), array_max(hb))), array_max(hi));
 }
 
 void generate_CDF(uint8_t c)
@@ -1350,9 +1358,69 @@ void generate_CDF(uint8_t c)
     }
 }
 
+void rgb2hsi(uint32_t rgba, float* h, float* s, float* i) {
+    float r, g, b, a;
+    convert_hex_to_RGBA(rgba, &r, &g, &b, &a);
+    
+    // Calculate Intensity
+    *i = (r + g + b) / 3.0f;
+    
+    // Calculate Saturation
+    float min_rgb = std::min(r, std::min(g, b));
+    *s = 1.0f - (3.0f * min_rgb / (r + g + b + 1e-6f)); // Adding a small value to avoid division by zero
+    
+    // Calculate Hue
+    float numerator = 0.5f * ((r - g) + (r - b));
+    float denominator = std::sqrt((r - g) * (r - g) + (r - b) * (g - b));
+    float theta = std::acos(numerator / (denominator + 1e-6f)); // Adding a small value to avoid division by zero
+    
+    if (b <= g) {
+        *h = theta;
+    } else {
+        *h = 2.0f * M_PI - theta;
+    }
+    
+    // Normalize Hue to [0, 1]
+    *h /= (2.0f * M_PI);
+}
+
+
+uint32_t hsi2rgb(float h, float s, float i) {
+    // Convert Hue from [0, 1] to [0, 2π]
+    float hue = h * 2.0f * M_PI;
+    float r, g, b;
+    
+    if (hue < 2.0f * M_PI / 3.0f) {
+        b = i * (1.0f - s);
+        r = i * (1.0f + s * std::cos(hue) / std::cos(M_PI / 3.0f - hue));
+        g = 3.0f * i - (r + b);
+    } else if (hue < 4.0f * M_PI / 3.0f) {
+        hue -= 2.0f * M_PI / 3.0f;
+        r = i * (1.0f - s);
+        g = i * (1.0f + s * std::cos(hue) / std::cos(M_PI / 3.0f - hue));
+        b = 3.0f * i - (r + g);
+    } else {
+        hue -= 4.0f * M_PI / 3.0f;
+        g = i * (1.0f - s);
+        b = i * (1.0f + s * std::cos(hue) / std::cos(M_PI / 3.0f - hue));
+        r = 3.0f * i - (g + b);
+    }
+    
+    // Clamp values to [0, 1]
+    r = std::fmax(0.0f, std::fmin(1.0f, r));
+    g = std::fmax(0.0f, std::fmin(1.0f, g));
+    b = std::fmax(0.0f, std::fmin(1.0f, b));
+    
+    // Convert RGB values to the range [0, 255]
+    return convert_RGBA_to_hex(r, g, b, 1.0f); // Alpha set to 1.0f (fully opaque)
+}
+
+
+
 void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 {
     uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
+    memcpy(old_pixels, pixels, w*h*sizeof(uint32_t));
 
     // primeira vez para fazer os cálculos
     generate_normalized_histogram(pixels, w, h, c);
@@ -1360,23 +1428,28 @@ void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 
     int tot_pixels = w * h;
     float r, g, b, a;
+    float hh, s, intensity;
     float* current_cdf = CDF[c];
 
     for (int i = 0; i < tot_pixels; ++i)
     {
-        old_pixels[i] = pixels[i];
-
         convert_hex_to_RGBA(pixels[i], &r, &g, &b, &a);
+        rgb2hsi(pixels[i], &hh, &s, &intensity);
 
-        float colors[3] = { r, g, b };
+        float colors[4] = { r, g, b, intensity };
 
-        uint8_t old_intensity = (uint8_t)(255 * colors[c]);
-        uint8_t new_intensity = (uint8_t)(current_cdf[old_intensity] * 255);
+        uint8_t old_intensity = (uint8_t)(255.0f * colors[c]);
+        uint8_t new_intensity = (uint8_t)(current_cdf[old_intensity] * 255.0f);
 
         colors[c] = new_intensity / 255.0f;
 
         // Reconstituir o pixel com os novos valores equalizados
-        pixels[i] = convert_RGBA_to_hex(colors[0], colors[1], colors[2], a);
+        if (c < 3)
+            pixels[i] = convert_RGBA_to_hex(colors[0], colors[1], colors[2], a);
+        else {
+            pixels[i] = hsi2rgb(hh, s, colors[c]);
+        }
+
     }
 
     undo_stack.push(old_pixels);
@@ -1390,8 +1463,10 @@ void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
     if (c == 2)
         undo_log_stack.push("Equalize BLUE Histogram");
 
+    if (c == 3)
+        undo_log_stack.push("Equalize INTENSITY Histogram");
+
     // gerando o histograma normalizado de novo para mostrar na GUI
-    generate_normalized_histogram(pixels, w, h, c);
     generate_normalized_histogram(pixels, w, h, c);
 }
 
@@ -1549,6 +1624,7 @@ void img_apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
     generate_normalized_histogram(pixels, w, h, 0);
     generate_normalized_histogram(pixels, w, h, 1);
     generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
 
     // Copiar o resultado de volta para os pixels originais
     // std::copy(output.begin(), output.end(), pixels);
@@ -1583,7 +1659,7 @@ void img_apply_sobel_filter(uint32_t* pixels, int w, int h) {
                     int ix = std::clamp(x + kx, 0, w - 1);
                     int iy = std::clamp(y + ky, 0, h - 1);
                     uint32_t pixel = old_pixels[iy * w + ix];
-                    float grayscale = pixel_RGBA_to_grayscale(pixel);
+                    float grayscale = pixel_RGBA_to_grayscale_lum(pixel);
                     gx += grayscale * sobel_x[ky + 1][kx + 1];
                     gy += grayscale * sobel_y[ky + 1][kx + 1];
                 }
@@ -1607,6 +1683,18 @@ void img_apply_sobel_filter(uint32_t* pixels, int w, int h) {
     generate_normalized_histogram(pixels, w, h, 0);
     generate_normalized_histogram(pixels, w, h, 1);
     generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
+}
+
+float pixel_RGBA_to_grayscale_lum(uint32_t pixel)
+{
+    float r, g, b, a;
+
+    convert_hex_to_RGBA(pixel, &r, &g, &b, &a);
+        
+    float media = r * 0.3 + g * 0.59 + b * 0.11;
+
+    return media;
 }
 
 float pixel_RGBA_to_grayscale(uint32_t pixel)
@@ -1615,7 +1703,7 @@ float pixel_RGBA_to_grayscale(uint32_t pixel)
 
     convert_hex_to_RGBA(pixel, &r, &g, &b, &a);
         
-    float media = r * 0.3 + g * 0.59 + b * 0.11;
+    float media = (r + g + b) / 3;
 
     return media;
 }
@@ -1708,6 +1796,7 @@ void img_apply_median_filter(uint32_t* pixels, int w, int h, int kernel_size) {
     generate_normalized_histogram(pixels, w, h, 0);
     generate_normalized_histogram(pixels, w, h, 1);
     generate_normalized_histogram(pixels, w, h, 2);
+    generate_normalized_histogram(pixels, w, h, 3);
 }
 
 ImU32 value_to_color(float value, float clamp) {
@@ -1772,4 +1861,5 @@ void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int
     generate_normalized_histogram(foreground, w, h, 0);
     generate_normalized_histogram(foreground, w, h, 1);
     generate_normalized_histogram(foreground, w, h, 2);
+    generate_normalized_histogram(foreground, w, h, 3);
 }
