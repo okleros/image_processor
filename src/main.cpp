@@ -39,6 +39,7 @@ void img_apply_median_filter(uint32_t* pixels, int w, int h, int kernel_size = 3
 void img_apply_sobel_filter(uint32_t* pixels, int w, int h);
 void img_apply_convolution(uint32_t* pixels, int w, int h, Kernel k);
 void img_black_and_white(uint32_t* pixels, int w, int h);
+void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int h, uint32_t key_color, float tolerance);
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void img_negative(uint32_t* pixels, int w, int h);
 char* img_reveal(uint32_t* pixels, int w, int h);
@@ -61,9 +62,11 @@ Kernel generate_average_kernel(int size);
 float pixel_RGBA_to_grayscale(uint32_t pixel);
 uint32_t convert_RGBA_to_hex(float r, float g, float b, float a);
 void create_or_resize_kernel(Kernel& kernel, int newSize);
+uint32_t* get_pixel_array(const char* img, int* w, int* h);
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a);
 void show_kernel_table(Kernel& kernel, const char* label, float clamp);
 ImU32 value_to_color(float value, float clamp);
+void file_dialog_2(char* buf);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void clear_stack(std::stack<uint32_t*>& stack);
@@ -165,7 +168,7 @@ int main(int, char**)
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
     // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
+    ImGui::StyleColorsClassic();
 
     // Setup Platform/Renderer backends
     ImGui_ImplSDL2_InitForSDLRenderer(window, renderer);
@@ -457,9 +460,9 @@ int main(int, char**)
                     static bool show_sx_kernel = false;
                     static float sx_data_magnitude = 3.0f;
 
-                    float sxk_elements[] = { 1,  0, -1,
-                                             2,  0, -2, 
-                                             1,  0, -1};
+                    float sxk_elements[] = {-1, 0, 1,
+                                            -2, 0, 2, 
+                                            -1, 0, 1};
                     Kernel sxk = {3, sxk_elements};
                     
                     if (ImGui::Button("Apply SobelX Filter"))
@@ -477,9 +480,9 @@ int main(int, char**)
                     static bool show_sy_kernel = false;
                     static float sy_data_magnitude = 3.0f;
                     
-                    float syk_elements[] = { 1,  2,  1,
+                    float syk_elements[] = {-1, -2, -1,
                                              0,  0,  0, 
-                                            -1, -2, -1};
+                                             1,  2,  1};
                     Kernel syk = {3, syk_elements};
 
                     if (ImGui::Button("Apply SobelY Filter"))
@@ -527,6 +530,41 @@ int main(int, char**)
                 ImGui::SameLine();
                 if (ImGui::Button("Reveal"))
                     printf("%s\n", img_reveal(pixels, imgWidth, imgHeight));
+            }
+
+            if (ImGui::CollapsingHeader("Chroma key"))
+            {
+                static float color[3]{0.0f, 1.0f, 0.0f};
+                static float tolerance = 30;
+
+                int sub_img_w, sub_img_h;
+
+                static char x[256] = "./../res/cloudy_sky.jpg";
+                file_dialog_2(x);
+                
+                ImGui::SameLine();
+                ImGui::Text("%s\n", x);
+                
+                ImGui::ColorEdit3("##MyColor", color);
+                
+                ImGui::SliderFloat("##tolerance", &tolerance, 0.0f, 100.0f);
+
+                ImGui::SameLine();
+                if (ImGui::Button("Apply"))
+                {
+                    uint32_t* sub_img = get_pixel_array(x, &sub_img_w, &sub_img_h);
+                    
+                    if (imgWidth == sub_img_w && imgHeight == sub_img_h)
+                    {
+                        img_apply_chroma_key(pixels, sub_img,
+                            imgWidth, imgHeight, convert_RGBA_to_hex(color[0], color[1], color[2], 1), tolerance);
+                    } else {
+                        std::cout << "[ERROR]: dimension mismatch ("<< imgWidth << "x" << imgHeight << ") vs (" << sub_img_w << "x" << sub_img_h << ")." << std::endl;
+                    }
+                
+                    delete[] sub_img;
+                }
+
             }
 
             if (ImGui::CollapsingHeader("Histogram Equalization")) {
@@ -796,6 +834,32 @@ void img_black_and_white_lum(uint32_t* pixels, int w, int h)
     generate_normalized_histogram(pixels, w, h, 0);
 }
 
+void file_dialog_2(char* buf)
+{
+    if (ImGui::Button("Open File##1")) {
+        // Abre o diálogo de arquivo
+        ImGui::OpenPopup("Select a file##1");
+    }
+
+    // Diálogo de arquivo
+    if (ImGui::BeginPopupModal("Select a file##1", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        // Itera pelos arquivos e diretórios do diretório atual e subdiretórios
+        if (ImGui::Selectable(".")) goto exit_popup;
+        for (const auto& entry : fs::/*recursive_*/directory_iterator("./../res")) {
+            if (!fs::is_directory(entry.path()) && ImGui::Selectable(entry.path().string().c_str()+9)) {
+                // Se um arquivo ou diretório é selecionado, armazena o caminho absoluto
+
+                strcpy(buf, entry.path().c_str());
+
+                ImGui::CloseCurrentPopup(); // Fecha o diálogo
+                goto exit_popup;
+            }
+        }
+    exit_popup:
+        ImGui::EndPopup();
+    }
+}
+
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah)
 {
     if (ImGui::Button("Open File")) {
@@ -883,6 +947,8 @@ void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height)
 
 bool remake_texture(SDL_Renderer* renderer, SDL_Texture** texture, int iw, int ih)
 {
+    SDL_DestroyTexture(*texture);
+
     *texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, iw, ih);
     if (*texture == NULL) {
         printf("Unable to create main texture! SDL Error: %s\n", SDL_GetError());
@@ -986,6 +1052,31 @@ bool init_SDL(SDL_DisplayMode* displayMode)
     }
 
     return 1;
+}
+
+uint32_t* get_pixel_array(const char* img, int* w, int* h)
+{
+    SDL_Surface* imageSurface = SDL_ConvertSurfaceFormat(IMG_Load(img), SDL_PIXELFORMAT_RGBA8888, 0);
+    if (imageSurface == NULL) {
+        printf("Unable to load image! SDL_image Error: %s\n", IMG_GetError());
+
+        return 0;
+    }
+
+    // Get image dimensions
+    *w = imageSurface->w;
+    *h = imageSurface->h;
+
+    uint32_t* pixels = (uint32_t*)malloc((*w) * (*h) * sizeof(uint32_t));
+
+    // Extract pixel data from image surface
+    SDL_LockSurface(imageSurface);
+    memcpy(pixels, imageSurface->pixels, (*w) * (*h) * sizeof(uint32_t));
+    SDL_UnlockSurface(imageSurface);
+
+    SDL_FreeSurface(imageSurface);
+
+    return pixels;
 }
 
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah)
@@ -1143,45 +1234,58 @@ char* img_reveal(uint32_t* pixels, int w, int h)
     return revealed_text;
 }
 
-void rgb2hsv(uint32_t hex_color, uint* h, uint* s, uint* v)
-{
+void rgb2hsv(uint32_t hex_color, float* h, float* s, float* v) {
     float r, g, b, a;
 
     convert_hex_to_RGBA(hex_color, &r, &g, &b, &a);
 
     float cmax = std::fmax(r, std::fmax(g, b));
     float cmin = std::fmin(r, std::fmin(g, b));
-
     float delta = cmax - cmin;
 
+    // Calculate hue
     if (delta == 0)
-        *h = delta;
-    
-    else if (cmax == r)
-        *h = 60 * (fmod(((g - b) / delta), 6.0f));
-    
-    else if (cmax == g)
-        *h = 60 * (((b - r) / delta) + 2);
-    
-    else if (cmax == b)
-        *h = 60 * (((r - g) / delta) + 4);
-
-    else
         *h = 0;
-
-    if (cmax == 0)
-        *s = cmax;
-
+    else if (cmax == r)
+        *h = 60 * std::fmod((g - b) / delta, 6.0f);
+    else if (cmax == g)
+        *h = 60 * ((b - r) / delta + 2);
     else
-        *s = delta/cmax;
+        *h = 60 * ((r - g) / delta + 4);
 
+    if (*h < 0) *h += 360;
+
+    // Calculate saturation
+    if (cmax == 0)
+        *s = 0;
+    else
+        *s = delta / cmax;
+
+    // Calculate value
     *v = cmax;
 }
 
-uint32_t hsv2rgb(uint h, uint s, uint v)
-{
-    return 0;
+uint32_t hsv2rgb(float h, float s, float v) {
+    float r, g, b;
+    int i = static_cast<int>(h / 60.0f) % 6;
+    float f = h / 60.0f - i;
+    float p = v * (1.0f - s);
+    float q = v * (1.0f - f * s);
+    float t = v * (1.0f - (1.0f - f) * s);
+
+    switch (i) {
+        case 0: r = v; g = t; b = p; break;
+        case 1: r = q; g = v; b = p; break;
+        case 2: r = p; g = v; b = t; break;
+        case 3: r = p; g = q; b = v; break;
+        case 4: r = t; g = p; b = v; break;
+        case 5: r = v; g = p; b = q; break;
+        default: r = 0; g = 0; b = 0; break;
+    }
+
+    return convert_RGBA_to_hex(r, g, b, 1.0f);
 }
+
 
 void space_out(int rep1, int rep2)
 {
@@ -1638,37 +1742,34 @@ ImU32 value_to_color(float value, float clamp) {
 }
 
 // Function to apply chroma key effect in HSV color space
-/*void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int h, uint32_t key_color, float tolerance) {
-    float key_r = getR(key_color);
-    float key_g = getG(key_color);
-    float key_b = getB(key_color);
+void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int h, uint32_t key_color, float tolerance) {
+    uint32_t* old_pixels = new uint32_t[w * h];
+    memcpy(old_pixels, foreground, w * h * sizeof(uint32_t));
 
-    // Convert key color to HSV
     float key_h, key_s, key_v;
-    rgb_to_hsv(key_r, key_g, key_b, key_h, key_s, key_v);
+    rgb2hsv(key_color, &key_h, &key_s, &key_v);
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
             uint32_t fg_pixel = foreground[y * w + x];
             uint32_t bg_pixel = background[y * w + x];
 
-            // Get the color components of the foreground pixel
-            float fg_r = getR(fg_pixel);
-            float fg_g = getG(fg_pixel);
-            float fg_b = getB(fg_pixel);
-
-            // Convert foreground pixel to HSV
             float fg_h, fg_s, fg_v;
-            rgb_to_hsv(fg_r, fg_g, fg_b, fg_h, fg_s, fg_v);
+            rgb2hsv(fg_pixel, &fg_h, &fg_s, &fg_v);
 
-            // Calculate hue distance and check if within tolerance
             float hue_distance = std::fabs(fg_h - key_h);
-            if (hue_distance > 180.0f) hue_distance = 360.0f - hue_distance; // Handle wrap-around
+            if (hue_distance > 180.0f) hue_distance = 360.0f - hue_distance;
 
             if (hue_distance < tolerance && fg_s > 0.1f && fg_v > 0.1f) {
-                // Replace with background pixel if close to the key color
                 foreground[y * w + x] = bg_pixel;
             }
         }
     }
-}*/
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("chroma key");
+
+    generate_normalized_histogram(foreground, w, h, 0);
+    generate_normalized_histogram(foreground, w, h, 1);
+    generate_normalized_histogram(foreground, w, h, 2);
+}

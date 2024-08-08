@@ -38,7 +38,7 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
 
 1. Run the executable generated after building.
   ```bash
-   ./kims
+   ./main
    ```
 2. Use KIMS for various image manipulation tasks similar to GIMP, but with a simpler interface.
 
@@ -64,7 +64,7 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
 - [x] Algoritmos de escala de cinza (média simples e ponderada)
 - [ ] Negativo
 - [ ] Chroma key
-- [x] Suavização e aguçamento em imagens coloridas 1
+- [x] Suavização e aguçamento em imagens coloridas
 - [ ] Equalização histograma em imagens coloridas (HSI)
 - [ ] Ajuste de matiz, saturação e brilho
 - [ ] Ajuste de canal (C/R, M/G, Y/B)
