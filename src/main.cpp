@@ -43,10 +43,12 @@ void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int
 void adjust_brightness(float* i, float brightness_factor);
 void adjust_saturation(float* s, float saturation_factor);
 void adjust_channels(uint32_t* pixels, int w, int h, float cr_factor, float mg_factor, float yb_factor);
+void apply_rotation(uint32_t* pixels, int w, int h, float angle, bool bilinear);
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void img_negative(uint32_t* pixels, int w, int h);
 void adjust_image(uint32_t* pixels, int w, int h, float hue_shift, float saturation_factor, float brightness_factor);
 char* img_reveal(uint32_t* pixels, int w, int h);
+void apply_scale(uint32_t* pixels, int w, int h, float sx, float sy, bool bilinear);
 void apply_sepia(uint32_t* image, int w, int h);
 void adjust_hue(float* h, float hue_shift);
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma);
@@ -64,6 +66,7 @@ void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 float pixel_RGBA_to_grayscale_lum(uint32_t pixel);
 void check_if_image_is_grayscale(uint32_t* pixels, int w, int h);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
+void show_color_conversion_tool();
 Kernel generate_gaussian_kernel(int size, float sigma);
 Kernel generate_average_kernel(int size);
 float pixel_RGBA_to_grayscale(uint32_t pixel);
@@ -74,6 +77,7 @@ void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float
 void show_kernel_table(Kernel& kernel, const char* label, float clamp);
 ImU32 value_to_color(float value, float clamp);
 void file_dialog_2(char* buf);
+uint32_t getPixel(const uint32_t* image, int width, int x, int y);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void clear_stack(std::stack<uint32_t*>& stack);
@@ -366,7 +370,8 @@ int main(int, char**)
                     apply_sepia(pixels, imgWidth, imgHeight);
                 }
                 space_out(); //------------------------------------------------------------
-
+                show_color_conversion_tool();
+                space_out(); //------------------------------------------------------------
                 ImGui::EndGroup();
             }
 
@@ -542,6 +547,26 @@ int main(int, char**)
                 ImGui::Unindent(5.0f);
             }
 
+            if (ImGui::CollapsingHeader("Spacial transformations"))
+            {
+                static bool bilinear = false;
+
+                static float angle=45, s[2] = {2, 2};
+
+                ImGui::Checkbox("Bilinear", &bilinear);
+
+                ImGui::InputFloat2("Scale X and Y", s);
+                if (ImGui::Button("Apply scale"))
+                {
+                    apply_scale(pixels, imgWidth, imgHeight, s[0], s[1], bilinear);
+                }
+                ImGui::InputFloat("Angle of rotation", &angle);
+                if (ImGui::Button("Apply rotation"))
+                {
+                    apply_rotation(pixels, imgWidth, imgHeight, angle, bilinear);
+                }
+            }
+
             if (ImGui::CollapsingHeader("Filter by Median")) {
                 space_out(); //------------------------------------------------------------
                 static int median_kernel_size = 3;
@@ -695,6 +720,12 @@ int main(int, char**)
     SDL_Quit();
 
     return 0;
+}
+
+uint32_t getPixel(const uint32_t* image, int width, int x, int y)
+{
+    if (x < 0 || x >= width || y < 0 || y >= width) return 0; // Fora dos limites
+    return image[y * width + x];
 }
 
 void clear_stack(std::stack<uint32_t*>& stack)
@@ -1278,56 +1309,68 @@ char* img_reveal(uint32_t* pixels, int w, int h)
 
 void rgb2hsv(uint32_t hex_color, float* h, float* s, float* v) {
     float r, g, b, a;
-
     convert_hex_to_RGBA(hex_color, &r, &g, &b, &a);
 
-    float cmax = std::fmax(r, std::fmax(g, b));
-    float cmin = std::fmin(r, std::fmin(g, b));
-    float delta = cmax - cmin;
+    float max_val = std::max({r, g, b});
+    float min_val = std::min({r, g, b});
+    float delta = max_val - min_val;
 
-    // Calculate hue
-    if (delta == 0)
-        *h = 0;
-    else if (cmax == r)
-        *h = 60 * std::fmod((g - b) / delta, 6.0f);
-    else if (cmax == g)
-        *h = 60 * ((b - r) / delta + 2);
-    else
-        *h = 60 * ((r - g) / delta + 4);
+    // Valor de brilho (V)
+    *v = max_val;
 
-    if (*h < 0) *h += 360;
+    // Saturação (S)
+    if (max_val != 0.0f) {
+        *s = delta / max_val;
+    } else {
+        *s = 0.0f;
+    }
 
-    // Calculate saturation
-    if (cmax == 0)
-        *s = 0;
-    else
-        *s = delta / cmax;
-
-    // Calculate value
-    *v = cmax;
+    // Matiz (H)
+    if (*s == 0.0f) {
+        *h = 0.0f; // Se a saturação for 0, o matiz não é definido
+    } else {
+        if (r == max_val) {
+            *h = (g - b) / delta;
+        } else if (g == max_val) {
+            *h = 2.0f + (b - r) / delta;
+        } else {
+            *h = 4.0f + (r - g) / delta;
+        }
+        *h *= 60.0f;
+        if (*h < 0.0f) {
+            *h += 360.0f;
+        }
+        *h /= 360.0f; // Normaliza o valor de H para [0.0, 1.0]
+    }
 }
 
+// Função para converter HSV para RGB
 uint32_t hsv2rgb(float h, float s, float v) {
     float r, g, b;
-    int i = static_cast<int>(h / 60.0f) % 6;
-    float f = h / 60.0f - i;
+
+    int i = static_cast<int>(h * 6.0f);
+    float f = h * 6.0f - i;
     float p = v * (1.0f - s);
     float q = v * (1.0f - f * s);
     float t = v * (1.0f - (1.0f - f) * s);
 
-    switch (i) {
+    switch (i % 6) {
         case 0: r = v; g = t; b = p; break;
         case 1: r = q; g = v; b = p; break;
         case 2: r = p; g = v; b = t; break;
         case 3: r = p; g = q; b = v; break;
         case 4: r = t; g = p; b = v; break;
         case 5: r = v; g = p; b = q; break;
-        default: r = 0; g = 0; b = 0; break;
     }
 
-    return convert_RGBA_to_hex(r, g, b, 1.0f);
-}
+    // Converter de volta para uint32_t
+    uint32_t R = static_cast<uint32_t>(std::round(r * 255.0f));
+    uint32_t G = static_cast<uint32_t>(std::round(g * 255.0f));
+    uint32_t B = static_cast<uint32_t>(std::round(b * 255.0f));
+    uint32_t A = 255; // Opacidade total
 
+    return (R << 24) | (G << 16) | (B << 8) | A;
+}
 
 void space_out(int rep1, int rep2)
 {
@@ -1448,8 +1491,6 @@ uint32_t hsi2rgb(float h, float s, float i) {
     // Convert RGB values to the range [0, 255]
     return convert_RGBA_to_hex(r, g, b, 1.0f); // Alpha set to 1.0f (fully opaque)
 }
-
-
 
 void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c)
 {
@@ -2018,4 +2059,181 @@ void adjust_channels(uint32_t* pixels, int w, int h, float cr_factor, float mg_f
     generate_normalized_histogram(pixels, w, h, 1);
     generate_normalized_histogram(pixels, w, h, 2);
     generate_normalized_histogram(pixels, w, h, 3);
+}
+
+void show_color_conversion_tool()
+{
+    // Valores iniciais para os sliders
+    static float h = 0.0f;
+    static float s = 1.0f;
+    static float v = 1.0f;
+    static uint32_t rgbColor = hsv2rgb(h, s, v);
+
+    // Mostrar sliders para HSV
+    ImGui::Text("HSV to RGB Conversion");
+    ImGui::SliderFloat("Hue1", &h, 0.0f, 360.0f, "%.1f");
+    ImGui::SliderFloat("Saturation1", &s, 0.0f, 1.0f, "%.2f");
+    ImGui::SliderFloat("Value1", &v, 0.0f, 1.0f, "%.2f");
+
+    // Atualizar a cor RGB com base na entrada HSV
+    rgbColor = hsv2rgb(h, s, v);
+    ImVec4 rgbColorVec;
+    convert_hex_to_RGBA(rgbColor, &rgbColorVec.x, &rgbColorVec.y, &rgbColorVec.z, &rgbColorVec.w);  // Mostrar a cor RGB resultante
+    ImGui::ColorEdit3("RGB Color", (float*)&rgbColorVec);
+
+    // Mostrar sliders para RGB
+    static float r = rgbColorVec.x;
+    static float g = rgbColorVec.y;
+    static float b = rgbColorVec.z;
+
+    ImGui::Text("RGB to HSV Conversion");
+    ImGui::SliderFloat("Red", &r, 0.0f, 1.0f, "%.2f");
+    ImGui::SliderFloat("Green", &g, 0.0f, 1.0f, "%.2f");
+    ImGui::SliderFloat("Blue", &b, 0.0f, 1.0f, "%.2f");
+
+    // Atualizar a cor HSV com base na entrada RGB
+    uint32_t rgbColorInput = convert_RGBA_to_hex(r, g, b, 1.0f);
+    rgb2hsv(rgbColorInput, &h, &s, &v);
+
+    // Mostrar os valores HSV atualizados
+    ImGui::Text("HSV Values: H = %.1f, S = %.2f, V = %.2f", h, s, v);
+}
+
+void apply_scale(uint32_t* pixels, int w, int h, float sx, float sy, bool bilinear)
+{
+    // Criação de uma cópia da imagem original para o histórico de desfazer
+    uint32_t* old_pixels = new uint32_t[w * h];
+    std::memcpy(old_pixels, pixels, w * h * sizeof(uint32_t));
+
+    // Calcular o centro da imagem
+    float centerX = w / 2.0f;
+    float centerY = h / 2.0f;
+
+    // Aplicar a escala diretamente na imagem de entrada
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            // Mapear as coordenadas da imagem escalada para a imagem original
+            float srcX = (x - centerX) / sx + centerX;
+            float srcY = (y - centerY) / sy + centerY;
+
+            int x0 = static_cast<int>(std::floor(srcX));
+            int y0 = static_cast<int>(std::floor(srcY));
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+
+            float dx = srcX - x0;
+            float dy = srcY - y0;
+
+            if (bilinear) {
+                // Interpolação bilinear usando a cópia original
+                float r00, g00, b00, a00;
+                float r01, g01, b01, a01;
+                float r10, g10, b10, a10;
+                float r11, g11, b11, a11;
+
+                uint32_t color00 = getPixel(old_pixels, w, x0, y0);
+                uint32_t color01 = getPixel(old_pixels, w, x1, y0);
+                uint32_t color10 = getPixel(old_pixels, w, x0, y1);
+                uint32_t color11 = getPixel(old_pixels, w, x1, y1);
+
+                convert_hex_to_RGBA(color00, &r00, &g00, &b00, &a00);
+                convert_hex_to_RGBA(color01, &r01, &g01, &b01, &a01);
+                convert_hex_to_RGBA(color10, &r10, &g10, &b10, &a10);
+                convert_hex_to_RGBA(color11, &r11, &g11, &b11, &a11);
+
+                float r = (1 - dx) * (1 - dy) * r00 + dx * (1 - dy) * r01 + (1 - dx) * dy * r10 + dx * dy * r11;
+                float g = (1 - dx) * (1 - dy) * g00 + dx * (1 - dy) * g01 + (1 - dx) * dy * g10 + dx * dy * g11;
+                float b = (1 - dx) * (1 - dy) * b00 + dx * (1 - dy) * b01 + (1 - dx) * dy * b10 + dx * dy * b11;
+                float a = (1 - dx) * (1 - dy) * a00 + dx * (1 - dy) * a01 + (1 - dx) * dy * a10 + dx * dy * a11;
+
+                pixels[y * w + x] = convert_RGBA_to_hex(r, g, b, a);
+            } else {
+                // Interpolação nearest neighbor usando a cópia original
+                int nearestX = static_cast<int>(std::round(srcX));
+                int nearestY = static_cast<int>(std::round(srcY));
+
+                // Garantir que os índices estejam dentro dos limites
+                nearestX = nearestX;
+                nearestY = nearestY;
+
+                pixels[y * w + x] = getPixel(old_pixels, w, nearestX, nearestY);
+            }
+        }
+    }
+
+    // Adicionar a imagem original ao histórico de desfazer
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("scaling");
+}
+
+void apply_rotation(uint32_t* pixels, int w, int h, float angle, bool bilinear)
+{
+    // Criação de uma cópia da imagem original para o histórico de desfazer
+    uint32_t* old_pixels = new uint32_t[w * h];
+    std::memcpy(old_pixels, pixels, w * h * sizeof(uint32_t));
+
+    // Calcular o centro da imagem
+    float centerX = w / 2.0f;
+    float centerY = h / 2.0f;
+
+    // Converter o ângulo para radianos
+    float radians = angle * (3.141592653589793f / 180.0f);
+    float cos_angle = std::cos(-radians);
+    float sin_angle = std::sin(-radians);
+
+    // Aplicar a rotação diretamente na imagem de entrada
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            // Mapear as coordenadas da imagem original para a imagem rotacionada
+            float srcX = cos_angle * (x - centerX) - sin_angle * (y - centerY) + centerX;
+            float srcY = sin_angle * (x - centerX) + cos_angle * (y - centerY) + centerY;
+
+            int x0 = static_cast<int>(std::floor(srcX));
+            int y0 = static_cast<int>(std::floor(srcY));
+            int x1 = x0 + 1;
+            int y1 = y0 + 1;
+
+            float dx = srcX - x0;
+            float dy = srcY - y0;
+
+            if (bilinear) {
+                // Interpolação bilinear usando a cópia original
+                float r00, g00, b00, a00;
+                float r01, g01, b01, a01;
+                float r10, g10, b10, a10;
+                float r11, g11, b11, a11;
+
+                uint32_t color00 = getPixel(old_pixels, w, x0, y0);
+                uint32_t color01 = getPixel(old_pixels, w, x1, y0);
+                uint32_t color10 = getPixel(old_pixels, w, x0, y1);
+                uint32_t color11 = getPixel(old_pixels, w, x1, y1);
+
+                convert_hex_to_RGBA(color00, &r00, &g00, &b00, &a00);
+                convert_hex_to_RGBA(color01, &r01, &g01, &b01, &a01);
+                convert_hex_to_RGBA(color10, &r10, &g10, &b10, &a10);
+                convert_hex_to_RGBA(color11, &r11, &g11, &b11, &a11);
+
+                float r = (1 - dx) * (1 - dy) * r00 + dx * (1 - dy) * r01 + (1 - dx) * dy * r10 + dx * dy * r11;
+                float g = (1 - dx) * (1 - dy) * g00 + dx * (1 - dy) * g01 + (1 - dx) * dy * g10 + dx * dy * g11;
+                float b = (1 - dx) * (1 - dy) * b00 + dx * (1 - dy) * b01 + (1 - dx) * dy * b10 + dx * dy * b11;
+                float a = (1 - dx) * (1 - dy) * a00 + dx * (1 - dy) * a01 + (1 - dx) * dy * a10 + dx * dy * a11;
+
+                pixels[y * w + x] = convert_RGBA_to_hex(r, g, b, a);
+            } else {
+                // Interpolação nearest neighbor usando a cópia original
+                int nearestX = static_cast<int>(std::round(srcX));
+                int nearestY = static_cast<int>(std::round(srcY));
+
+                // Garantir que os índices estejam dentro dos limites
+                nearestX = nearestX;
+                nearestY = nearestY;
+
+                pixels[y * w + x] = getPixel(old_pixels, w, nearestX, nearestY);
+            }
+        }
+    }
+
+    // Adicionar a imagem original ao histórico de desfazer
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("rotation");
 }
