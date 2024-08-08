@@ -40,9 +40,13 @@ void img_apply_sobel_filter(uint32_t* pixels, int w, int h);
 void img_apply_convolution(uint32_t* pixels, int w, int h, Kernel k);
 void img_black_and_white(uint32_t* pixels, int w, int h);
 void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int h, uint32_t key_color, float tolerance);
+void adjust_brightness(float* i, float brightness_factor);
+void adjust_saturation(float* s, float saturation_factor);
 void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void img_negative(uint32_t* pixels, int w, int h);
+void adjust_image(uint32_t* pixels, int w, int h, float hue_shift, float saturation_factor, float brightness_factor);
 char* img_reveal(uint32_t* pixels, int w, int h);
+void adjust_hue(float* h, float hue_shift);
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma);
 void img_hide(uint32_t* pixels, int w, int h, const char* text);
 void img_log(uint32_t* pixels, int w, int h, float c);
@@ -332,6 +336,18 @@ int main(int, char**)
                 if (ImGui::Button("Correct gamma"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
                     img_gamma(pixels, imgWidth, imgHeight, c_gamma, gamma);
                 space_out(); //------------------------------------------------------------
+
+                static float hue_shift = 0, saturation_factor = 1, brightness_factor = 1;
+
+
+                ImGui::SliderFloat("Hue", &hue_shift, 0.0f, 1.0f, "Hue: %.3f");
+                ImGui::SliderFloat("Saturation", &saturation_factor, 0.0f, 2.0f, "Saturation: %.3f");
+                ImGui::SliderFloat("Brightness", &brightness_factor, 0.0f, 2.0f, "Brightness: %.3f");
+
+                if (ImGui::Button("Adjust image"))
+                {
+                    adjust_image(pixels, imgWidth, imgHeight, hue_shift, saturation_factor, brightness_factor);
+                }
 
                 ImGui::EndGroup();
             }
@@ -1863,3 +1879,47 @@ void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int
     generate_normalized_histogram(foreground, w, h, 2);
     generate_normalized_histogram(foreground, w, h, 3);
 }
+
+void adjust_image(uint32_t* pixels, int w, int h, float hue_shift, float saturation_factor, float brightness_factor) {
+    for (int i = 0; i < w*h; ++i) {
+        // Converter RGB para HSI
+        float hh, ss, ii;
+        rgb2hsi(pixels[i], &hh, &ss, &ii);
+
+        // Ajustar HSI
+        adjust_hue(&hh, hue_shift);
+        adjust_saturation(&ss, saturation_factor);
+        adjust_brightness(&ii, brightness_factor);
+
+        // Converter HSI de volta para RGB e atualizar o pixel
+        pixels[i] = hsi2rgb(hh, ss, ii);
+    }
+}
+
+void adjust_hue(float* h, float hue_shift) {
+    *h += hue_shift;
+    if (*h > 1.0f) {
+        *h -= 1.0f;
+    } else if (*h < 0.0f) {
+        *h += 1.0f;
+    }
+}
+
+void adjust_saturation(float* s, float saturation_factor) {
+    *s *= saturation_factor;
+    if (*s > 1.0f) {
+        *s = 1.0f;
+    } else if (*s < 0.0f) {
+        *s = 0.0f;
+    }
+}
+
+void adjust_brightness(float* i, float brightness_factor) {
+    *i *= brightness_factor;
+    if (*i > 1.0f) {
+        *i = 1.0f;
+    } else if (*i < 0.0f) {
+        *i = 0.0f;
+    }
+}
+
