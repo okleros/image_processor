@@ -35,8 +35,11 @@ struct Kernel {
 // Image functions
 void img_generate_equalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 void img_black_and_white_lum(uint32_t* pixels, int w, int h);
+void img_apply_median_filter(uint32_t* pixels, int w, int h, int kernel_size = 3);
+void img_apply_sobel_filter(uint32_t* pixels, int w, int h);
+void img_apply_convolution(uint32_t* pixels, int w, int h, Kernel k);
 void img_black_and_white(uint32_t* pixels, int w, int h);
-void apply_convolution(uint32_t* pixels, int w, int h, Kernel k);
+void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
 void img_negative(uint32_t* pixels, int w, int h);
 char* img_reveal(uint32_t* pixels, int w, int h);
 void img_gamma(uint32_t* pixels, int w, int h, float c, float gamma);
@@ -49,17 +52,18 @@ bool remake_texture(SDL_Renderer* renderer, SDL_Texture** texture, int iw, int i
 bool init_SDL(SDL_DisplayMode* displayMode);
 
 // Auxiliary functions
+
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 void check_if_image_is_grayscale(uint32_t* pixels, int w, int h);
 bool get_pixel_array_from_image(SDL_Renderer* renderer, SDL_Texture** texture, const char* img, uint32_t** pixels, int* w, int* h, SDL_Rect* rect, int iaw, int iah);
 Kernel generate_gaussian_kernel(int size, float sigma);
 Kernel generate_average_kernel(int size);
+float pixel_RGBA_to_grayscale(uint32_t pixel);
 uint32_t convert_RGBA_to_hex(float r, float g, float b, float a);
-void createOrResizeKernel(Kernel& kernel, int newSize);
+void create_or_resize_kernel(Kernel& kernel, int newSize);
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a);
-ImU32 value_to_color(float value, float clamp);
 void show_kernel_table(Kernel& kernel, const char* label, float clamp);
-void img_threshold(uint32_t* pixels, int w, int h, uint8_t c);
+ImU32 value_to_color(float value, float clamp);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void clear_stack(std::stack<uint32_t*>& stack);
@@ -189,7 +193,7 @@ int main(int, char**)
 
     std::string text;
     
-    Kernel generic_kernel = {3, new float[9]{-10, -10, -10, 0, 0, 0, 10, 10, 10}};
+    Kernel generic_kernel = {3, new float[9]{-1, -1, -1, 0, 0, 0, 1, 1, 1}};
 
     // Main loop
     bool done = false;
@@ -329,98 +333,184 @@ int main(int, char**)
 
             if (ImGui::CollapsingHeader("Convolution"))
             {
-                space_out(); //------------------------------------------------------------
-                static int newSize = generic_kernel.size;
-                static float data_magnitude = 1;
-                // Input field to adjust the kernel size
-                ImGui::InputInt("Kernel Size", &newSize, 2);
-                ImGui::InputFloat("Data magnitude", &data_magnitude, 0.1f, 1.0f);
-
-                // Resize the kernel if the size has changed
-                if (newSize != generic_kernel.size) {
-                    createOrResizeKernel(generic_kernel, newSize);
-                }
-
-                show_kernel_table(generic_kernel, "generic_kernel", data_magnitude);
-
-                if (ImGui::Button("Apply Generic Convolution"))
+                ImGui::Indent(5.0f);
+                if (ImGui::CollapsingHeader("Generic convolution"))
                 {
-                    apply_convolution(pixels, imgWidth, imgHeight, generic_kernel);
-                }
-                space_out(); //------------------------------------------------------------
+                    space_out(); //------------------------------------------------------------
+                    static int newSize = generic_kernel.size;
+                    static float data_magnitude = 1;
+                    // Input field to adjust the kernel size
+                    ImGui::InputInt("Kernel Size", &newSize, 2);
+                    ImGui::InputFloat("Data magnitude", &data_magnitude, 0.1f, 1.0f);
 
-                static int kernel_size = 3;
-                ImGui::InputInt("kernel size", &kernel_size, 2);
+                    // Resize the kernel if the size has changed
+                    if (newSize != generic_kernel.size) {
+                        create_or_resize_kernel(generic_kernel, newSize);
+                    }
+
+                    show_kernel_table(generic_kernel, "generic_kernel", data_magnitude);
+
+                    if (ImGui::Button("Apply Generic Convolution"))
+                    {
+                        img_apply_convolution(pixels, imgWidth, imgHeight, generic_kernel);
+                    }
+                    space_out(); //------------------------------------------------------------
+                }
+
+                if (ImGui::CollapsingHeader("Gaussian blur"))
+                {
+                    space_out(); //------------------------------------------------------------
+                    static int kernel_size = 3;
+                    ImGui::InputInt("Kernel size", &kernel_size, 2);
+                    
+                    static float std_dev = 1.0f;
+                    ImGui::InputFloat("std dev", &std_dev, 0.5f, 2.0f);
+                    Kernel gk = generate_gaussian_kernel(kernel_size, std_dev);
+
+                    static bool show_gaussian_kernel = false;
+                    static float g_data_magnitude = 0.2f;
+                    if (show_gaussian_kernel) ImGui::InputFloat("GData mag", &g_data_magnitude, 0.05f, 1.0f);
+                    if (ImGui::Button("Apply Gaussian Blur"))
+                    {
+                        img_apply_convolution(pixels, imgWidth, imgHeight, gk);
+                    }
+                    ImGui::SameLine();
+                    ImGui::Checkbox("View Kernel", &show_gaussian_kernel);
+                    if (show_gaussian_kernel)
+                    {
+                        show_kernel_table(gk, "gaussian_kernel", g_data_magnitude);
+                    }
+                    space_out(); //------------------------------------------------------------
+                }
+
+                if (ImGui::CollapsingHeader("Average blur"))
+                {
+                    space_out(); //------------------------------------------------------------
+                    static int avg_kernel_size = 3;
+                    ImGui::InputInt("Kernel size", &avg_kernel_size, 2);
+                    Kernel ak = generate_average_kernel(avg_kernel_size);
+
+                    static bool show_avg_kernel = false;
+                    static float avg_data_magnitude = 1/(avg_kernel_size*avg_kernel_size);
+                    if (ImGui::Button("Apply Average Blur"))
+                    {
+                        img_apply_convolution(pixels, imgWidth, imgHeight, ak);
+                    }
+                    ImGui::SameLine();
+                    ImGui::Checkbox("View Kernel", &show_avg_kernel);
+                    if (show_avg_kernel)
+                    {
+                        show_kernel_table(ak, "avg_kernel", avg_data_magnitude);
+                    }
+                    space_out(); //------------------------------------------------------------
+                }
+
+                if (ImGui::CollapsingHeader("Sharpness (Laplacian)"))
+                {
+                    space_out(); //------------------------------------------------------------
+                    static bool show_laplace_kernel = false;
+                    static float laplace_data_magnitude = 3.0f;
+
+                    float lk_elements[] = { 0, -1,  0,
+                                           -1,  5, -1, 
+                                            0, -1,  0};
+                    Kernel lk = {3, lk_elements};
+
+                    if (ImGui::Button("Apply Laplacian Filter"))
+                    {
+                        img_apply_convolution(pixels, imgWidth, imgHeight, lk);
+                    }
+                    ImGui::SameLine();
+                    ImGui::Checkbox("View Kernel", &show_laplace_kernel);
+                    if (show_laplace_kernel)
+                    {
+                        show_kernel_table(lk, "laplace_kernel", laplace_data_magnitude);
+                    }
+                    space_out(); //------------------------------------------------------------
+                }
                 
-                static float std_dev = 1.0f;
-                ImGui::InputFloat("std dev", &std_dev, 0.5f, 2.0f);
-                Kernel gk = generate_gaussian_kernel(kernel_size, std_dev);
+                if (ImGui::CollapsingHeader("Sharpness (High Boost)")) {
+                    space_out(); //------------------------------------------------------------
+                    static bool show_hb_kernel = false;
+                    static float hb_data_magnitude = 3.0f;
 
-                static float g_data_magnitude = 0.2f;
-                ImGui::InputFloat("GData mag", &g_data_magnitude, 0.05f, 1.0f);
-                if (ImGui::Button("Apply Gaussian Blur"))
-                {
-                    apply_convolution(pixels, imgWidth, imgHeight, gk);
-                }
-                static bool show_gaussian_kernel = false;
-                ImGui::SameLine();
-                ImGui::Checkbox("View Gaussian Kernel", &show_gaussian_kernel);
-                if (show_gaussian_kernel)
-                {
-                    show_kernel_table(gk, "gaussian_kernel", g_data_magnitude);
-                }
-                space_out(); //------------------------------------------------------------
-
-                static int avg_kernel_size = 3;
-                ImGui::InputInt("avg kernel size", &avg_kernel_size, 2);
-                Kernel ak = generate_average_kernel(avg_kernel_size);
-
-                if (ImGui::Button("Apply Average Blur"))
-                {
-                    apply_convolution(pixels, imgWidth, imgHeight, ak);
-                }
-                space_out(); //------------------------------------------------------------
-
-                float lk_elements[] = { 0, -1,  0,
-                                       -1,  5, -1, 
-                                        0, -1,  0};
-                Kernel lk = {3, lk_elements};
-
-                if (ImGui::Button("Apply Laplacian Filter"))
-                {
-                    apply_convolution(pixels, imgWidth, imgHeight, lk);
+                    float hbk_elements[] = {-1, -1, -1,
+                                            -1,  9, -1, 
+                                            -1, -1, -1};
+                    Kernel hbk = {3, hbk_elements};
+                
+                    if (ImGui::Button("Apply High Boost Filter"))
+                    {
+                        img_apply_convolution(pixels, imgWidth, imgHeight, hbk);
+                    }
+                    ImGui::SameLine();
+                    ImGui::Checkbox("View Kernel", &show_hb_kernel);
+                    if (show_hb_kernel)
+                    {
+                        show_kernel_table(hbk, "hb_kernel", hb_data_magnitude);
+                    }
+                    space_out(); //------------------------------------------------------------
                 }
                 
-                float hbk_elements[] = {-1, -1, -1,
-                                        -1,  9, -1, 
-                                        -1, -1, -1};
-                Kernel hbk = {3, hbk_elements};
-                
-                ImGui::SameLine();
-                if (ImGui::Button("Apply High Boost Filter"))
-                {
-                    apply_convolution(pixels, imgWidth, imgHeight, hbk);
-                }
-                space_out(); //------------------------------------------------------------
+                if (ImGui::CollapsingHeader("Sobel Operator")) {
+                    space_out(); //------------------------------------------------------------
+                    static bool show_sx_kernel = false;
+                    static float sx_data_magnitude = 3.0f;
 
-                if (ImGui::Button("Sobel X"))
-                {
                     float sxk_elements[] = { 1,  0, -1,
                                              2,  0, -2, 
                                              1,  0, -1};
                     Kernel sxk = {3, sxk_elements};
+                    
+                    if (ImGui::Button("Apply SobelX Filter"))
+                    {
+                        img_apply_convolution(pixels, imgWidth, imgHeight, sxk);
+                    }
+                    ImGui::SameLine();
+                    ImGui::Checkbox("View X Kernel", &show_sx_kernel);
+                    if (show_sx_kernel)
+                    {
+                        show_kernel_table(sxk, "sx_kernel", sx_data_magnitude);
+                    }
 
-                    apply_convolution(pixels, imgWidth, imgHeight, sxk);
-                }
-
-                if (ImGui::Button("Sobel Y"))
-                {
+                    space_out(); //------------------------------------------------------------
+                    static bool show_sy_kernel = false;
+                    static float sy_data_magnitude = 3.0f;
+                    
                     float syk_elements[] = { 1,  2,  1,
                                              0,  0,  0, 
                                             -1, -2, -1};
                     Kernel syk = {3, syk_elements};
 
-                    apply_convolution(pixels, imgWidth, imgHeight, syk);
+                    if (ImGui::Button("Apply SobelY Filter"))
+                    {
+                        img_apply_convolution(pixels, imgWidth, imgHeight, syk);
+                    }
+                    ImGui::SameLine();
+                    ImGui::Checkbox("View Y Kernel", &show_sy_kernel);
+                    if (show_sy_kernel)
+                    {
+                        show_kernel_table(syk, "sy_kernel", sy_data_magnitude);
+                    }
+
+                    space_out(); //------------------------------------------------------------
+                    if (ImGui::Button("Apply Sobel Operator"))
+                    {
+                        img_apply_sobel_filter(pixels, imgWidth, imgHeight);
+                    }
+                    space_out(); //------------------------------------------------------------
+                }
+                ImGui::Unindent(5.0f);
+            }
+
+            if (ImGui::CollapsingHeader("Filter by Median")) {
+                space_out(); //------------------------------------------------------------
+                static int median_kernel_size = 3;
+                ImGui::InputInt("Kernel size", &median_kernel_size, 2);
+                
+                if (ImGui::Button("Apply Median Filter"))
+                {
+                    img_apply_median_filter(pixels, imgWidth, imgHeight, median_kernel_size);
                 }
                 space_out(); //------------------------------------------------------------
             }
@@ -1251,7 +1341,7 @@ Kernel generate_average_kernel(int size) {
 }
 
 // Function to create or resize the kernel
-void createOrResizeKernel(Kernel& kernel, int newSize) {
+void create_or_resize_kernel(Kernel& kernel, int newSize) {
     if (newSize % 2 == 0) {
         newSize += 1; // Ensure the size is odd
     }
@@ -1269,7 +1359,7 @@ void show_kernel_table(Kernel& kernel, const char* label, float clamp) {
 
     // Push style var to change cell padding
     ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.0f, 0.0f)); // Set both x and y padding to 0
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 10.0f)); // Set frame padding to 0 for tighter fit
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0.0f, 12.0f)); // Set frame padding to 0 for tighter fit
 
     // Create a table with the given size
     if (ImGui::BeginTable(label, kernel.size, flags)) {
@@ -1286,7 +1376,7 @@ void show_kernel_table(Kernel& kernel, const char* label, float clamp) {
                 ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg, color);
                 
                 // Center align the text
-                ImGui::PushItemWidth(ImGui::GetFontSize() * 2.8f);
+                ImGui::PushItemWidth(ImGui::GetFontSize() * 2.76f);
                 // ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetColumnWidth() - ImGui::CalcTextSize("0.000").x) * 0.5f);
                 ImGui::DragFloat(("##element" + std::to_string(index)).c_str(), &kernel.elements[index], 0.1f, -FLT_MAX, FLT_MAX, "%.2f", ImGuiSliderFlags_AlwaysClamp);
                 ImGui::PopItemWidth();
@@ -1300,7 +1390,7 @@ void show_kernel_table(Kernel& kernel, const char* label, float clamp) {
 }
 
 // Função para aplicar convolução em uma imagem RGBA
-void apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
+void img_apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
     int halfSize = k.size / 2;
 
     uint32_t* old_pixels = (uint32_t*)malloc(w * h * sizeof(uint32_t));
@@ -1360,6 +1450,162 @@ void apply_convolution(uint32_t* pixels, int w, int h, Kernel k) {
     // std::copy(output.begin(), output.end(), pixels);
 }
 
+void img_apply_sobel_filter(uint32_t* pixels, int w, int h) {
+    // Sobel kernels
+    float sobel_x[3][3] = {
+        {-1, 0, 1},
+        {-2, 0, 2},
+        {-1, 0, 1}
+    };
+
+    float sobel_y[3][3] = {
+        {-1, -2, -1},
+        {0, 0, 0},
+        {1, 2, 1}
+    };
+
+    // Create a copy of the original image to read from
+    uint32_t* old_pixels = new uint32_t[w*h];
+    memcpy(old_pixels, pixels, w * h * sizeof(uint32_t));
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            float gx = 0.0f;
+            float gy = 0.0f;
+
+            // Apply Sobel kernels
+            for (int ky = -1; ky <= 1; ++ky) {
+                for (int kx = -1; kx <= 1; ++kx) {
+                    int ix = std::clamp(x + kx, 0, w - 1);
+                    int iy = std::clamp(y + ky, 0, h - 1);
+                    uint32_t pixel = old_pixels[iy * w + ix];
+                    float grayscale = pixel_RGBA_to_grayscale(pixel);
+                    gx += grayscale * sobel_x[ky + 1][kx + 1];
+                    gy += grayscale * sobel_y[ky + 1][kx + 1];
+                }
+            }
+
+            // Calculate gradient magnitude
+            float magnitude = std::sqrt(gx * gx + gy * gy);
+
+            // Normalize to range [0, 1]
+            magnitude = std::min(1.0f, magnitude);
+
+            // Convert back to RGBA
+            uint32_t rgba = convert_RGBA_to_hex(magnitude, magnitude, magnitude, magnitude);
+            pixels[y * w + x] = rgba;
+        }
+    }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("sobel operator");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
+}
+
+float pixel_RGBA_to_grayscale(uint32_t pixel)
+{
+    float r, g, b, a;
+
+    convert_hex_to_RGBA(pixel, &r, &g, &b, &a);
+        
+    float media = r * 0.3 + g * 0.59 + b * 0.11;
+
+    return media;
+}
+
+// Quickselect algorithm to find the k-th smallest element
+template<typename T>
+T quickselect(std::vector<T>& arr, int k) {
+    if (arr.empty()) throw std::invalid_argument("Array is empty");
+
+    int left = 0;
+    int right = arr.size() - 1;
+
+    while (left < right) {
+        int pivotIndex = left + (right - left) / 2;
+        T pivotValue = arr[pivotIndex];
+        std::swap(arr[pivotIndex], arr[right]);
+
+        int storeIndex = left;
+        for (int i = left; i < right; ++i) {
+            if (arr[i] < pivotValue) {
+                std::swap(arr[i], arr[storeIndex]);
+                ++storeIndex;
+            }
+        }
+        std::swap(arr[storeIndex], arr[right]);
+
+        if (k == storeIndex) {
+            return arr[k];
+        } else if (k < storeIndex) {
+            right = storeIndex - 1;
+        } else {
+            left = storeIndex + 1;
+        }
+    }
+
+    return arr[left];
+}
+
+void img_apply_median_filter(uint32_t* pixels, int w, int h, int kernel_size) {
+    uint32_t* old_pixels = new uint32_t[w * h];
+    memcpy(old_pixels, pixels, w * h * sizeof(uint32_t));
+
+    int half_k = kernel_size / 2;
+
+    float r, g, b, a;
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            std::vector<float> r_neigh, g_neigh, b_neigh;
+
+            // Collect neighborhood pixels
+            for (int ky = -half_k; ky <= half_k; ++ky) {
+                for (int kx = -half_k; kx <= half_k; ++kx) {
+                    int ix = std::clamp(x + kx, 0, w - 1);
+                    int iy = std::clamp(y + ky, 0, h - 1);
+                    uint32_t pixel = old_pixels[iy * w + ix];
+                    
+                    convert_hex_to_RGBA(pixel, &r, &g, &b, &a);
+
+                    r_neigh.push_back(r);
+                    if (!is_img_grayscale)
+                    {
+                        g_neigh.push_back(g);
+                        b_neigh.push_back(b);
+                    }
+                }
+            }
+
+            // Sort and find the median for each channel
+            auto median = [](std::vector<float>& v) {
+                return quickselect(v, v.size() / 2);
+            };
+
+            float r_median = median(r_neigh);
+            if (!is_img_grayscale)
+            {
+                float g_median = median(g_neigh);
+                float b_median = median(b_neigh);
+                
+                pixels[y * w + x] = convert_RGBA_to_hex(r_median, g_median, b_median, 1); // Alpha channel set to 255
+            } else {
+                pixels[y * w + x] = convert_RGBA_to_hex(r_median, r_median, r_median, 1); // Alpha channel set to 255
+            }
+        }
+    }
+
+    undo_stack.push(old_pixels);
+    undo_log_stack.push("median filter");
+
+    generate_normalized_histogram(pixels, w, h, 0);
+    generate_normalized_histogram(pixels, w, h, 1);
+    generate_normalized_histogram(pixels, w, h, 2);
+}
+
 ImU32 value_to_color(float value, float clamp) {
     float normalized_value;
     ImVec4 color;
@@ -1390,3 +1636,39 @@ ImU32 value_to_color(float value, float clamp) {
     ImU32 cell_bg_color = ImGui::GetColorU32(color);
     return cell_bg_color;
 }
+
+// Function to apply chroma key effect in HSV color space
+/*void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int h, uint32_t key_color, float tolerance) {
+    float key_r = getR(key_color);
+    float key_g = getG(key_color);
+    float key_b = getB(key_color);
+
+    // Convert key color to HSV
+    float key_h, key_s, key_v;
+    rgb_to_hsv(key_r, key_g, key_b, key_h, key_s, key_v);
+
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            uint32_t fg_pixel = foreground[y * w + x];
+            uint32_t bg_pixel = background[y * w + x];
+
+            // Get the color components of the foreground pixel
+            float fg_r = getR(fg_pixel);
+            float fg_g = getG(fg_pixel);
+            float fg_b = getB(fg_pixel);
+
+            // Convert foreground pixel to HSV
+            float fg_h, fg_s, fg_v;
+            rgb_to_hsv(fg_r, fg_g, fg_b, fg_h, fg_s, fg_v);
+
+            // Calculate hue distance and check if within tolerance
+            float hue_distance = std::fabs(fg_h - key_h);
+            if (hue_distance > 180.0f) hue_distance = 360.0f - hue_distance; // Handle wrap-around
+
+            if (hue_distance < tolerance && fg_s > 0.1f && fg_v > 0.1f) {
+                // Replace with background pixel if close to the key color
+                foreground[y * w + x] = bg_pixel;
+            }
+        }
+    }
+}*/

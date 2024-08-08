@@ -54,14 +54,14 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
 - [x] Limiarização
 - [x] Aplicação de filtro genérico por convolução
 - [x] Filtro de suavização da média [simples e ponderada]
-- [ ] Filtragem pela mediana
+- [x] Filtragem pela mediana
 - [x] Aguçamento (nitidez) laplaciano
 - [x] Aguçamento (nitidez) high boost
 - [x] Filtros de sobel - x e y separados
-- [ ] Detecção não linear de bordas pelo gradiente
+- [x] Detecção não linear de bordas pelo gradiente
 - [ ] Calculo da trasformada de fourier
 - [ ] Criar ferramenta para transformação entre sistemas de cores RGB <-> HSV
-- [ ] Algoritmos de escala de cinza (média simples e ponderada)
+- [x] Algoritmos de escala de cinza (média simples e ponderada)
 - [ ] Negativo
 - [ ] Chroma key
 - [x] Suavização e aguçamento em imagens coloridas 1
