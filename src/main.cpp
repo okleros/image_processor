@@ -23,7 +23,6 @@ Co-author: Unknown
 #include <stack>
 #include <SDL.h>
 
-
 #define MAX_STEG_TEXT 524288
 #define SIDEBAR_SIZE 360
 
@@ -38,8 +37,8 @@ void img_black_and_white_lum(uint32_t* pixels, int w, int h);
 void img_apply_median_filter(uint32_t* pixels, int w, int h, int kernel_size = 3);
 void img_apply_sobel_filter(uint32_t* pixels, int w, int h);
 void img_apply_convolution(uint32_t* pixels, int w, int h, Kernel k);
-void img_black_and_white(uint32_t* pixels, int w, int h);
 void img_apply_chroma_key(uint32_t* foreground, uint32_t* background, int w, int h, uint32_t key_color, float tolerance);
+void img_black_and_white(uint32_t* pixels, int w, int h);
 void adjust_brightness(float* i, float brightness_factor);
 void adjust_saturation(float* s, float saturation_factor);
 void adjust_channels(uint32_t* pixels, int w, int h, float cr_factor, float mg_factor, float yb_factor);
@@ -61,7 +60,6 @@ bool remake_texture(SDL_Renderer* renderer, SDL_Texture** texture, int iw, int i
 bool init_SDL(SDL_DisplayMode* displayMode);
 
 // Auxiliary functions
-
 void generate_normalized_histogram(uint32_t* pixels, int w, int h, uint8_t c);
 float pixel_RGBA_to_grayscale_lum(uint32_t pixel);
 void check_if_image_is_grayscale(uint32_t* pixels, int w, int h);
@@ -75,13 +73,16 @@ void create_or_resize_kernel(Kernel& kernel, int newSize);
 uint32_t* get_pixel_array(const char* img, int* w, int* h);
 void convert_hex_to_RGBA(uint32_t color_hex, float* r, float* g, float* b, float* a);
 void show_kernel_table(Kernel& kernel, const char* label, float clamp);
+void print_color_prob(uint32_t* pixels, int w, int h);
 ImU32 value_to_color(float value, float clamp);
 void file_dialog_2(char* buf);
 uint32_t getPixel(const uint32_t* image, int width, int x, int y);
+float my_distance(float* arr1, float* arr2, size_t dimensions);
 void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixels, int* w, int* h, SDL_Rect* destRect, int iaw, int iah);
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void clear_stack(std::stack<uint32_t*>& stack);
 uint32_t hsi2rgb(float h, float s, float i);
+void rgb_to_lab(float* rgb, float* l, float* a, float* b);
 void space_out(int rep1 = 1, int rep2 = 1);
 void img_save(uint32_t* pixels, int width, int height);
 void rgb2hsi(uint32_t rgb, float* h, float* s, float* i);
@@ -128,7 +129,6 @@ std::stack<std::string> redo_log_stack;
 // Main code
 int main(int, char**)
 {
-
     setbuf(stdout, NULL);
 
     uint32_t* pixels = nullptr;
@@ -187,7 +187,7 @@ int main(int, char**)
     ImGui_ImplSDLRenderer2_Init(renderer);
 
     // Our state 
-    bool show_demo_window = true;
+    bool show_demo_window = false;
 
     static std::vector<float> graphData(256, 0);
 
@@ -595,7 +595,6 @@ int main(int, char**)
 
             if (ImGui::CollapsingHeader("Chroma key"))
             {
-                static float color[3]{0.0f, 1.0f, 0.0f};
                 static float tolerance = 30;
 
                 int sub_img_w, sub_img_h;
@@ -606,6 +605,7 @@ int main(int, char**)
                 ImGui::SameLine();
                 ImGui::Text("%s\n", x);
                 
+                static float color[3]{0.0f, 1.0f, 0.0f};
                 ImGui::ColorEdit3("##MyColor", color);
                 
                 ImGui::SliderFloat("##tolerance", &tolerance, 0.0f, 100.0f);
@@ -671,6 +671,38 @@ int main(int, char**)
                 ImGui::Unindent();
             }
 
+            if (ImGui::CollapsingHeader("Data compression tests"))
+            {
+                space_out();
+                // RGB color space
+                static float color1[3]{0.0f, 1.0f, 0.0f};
+                static float color2[3]{0.0f, 1.0f, 0.0f};
+
+                // LAB color space
+                static float l1, a1, b1, l2, a2, b2;
+
+                rgb_to_lab(color1, &l1, &a1, &b1);
+                rgb_to_lab(color2, &l2, &a2, &b2);
+
+                float lab1[3] = {l1, a1, b1};
+                float lab2[3] = {l2, a2, b2};
+
+                ImGui::ColorEdit3("##MyColor1", color1);
+                ImGui::Text("LAB color1: [%.3f, %.3f, %.3f]", l1, a1, b1);
+                ImGui::ColorEdit3("##MyColor2", color2);
+                ImGui::Text("LAB color2: [%.3f, %.3f, %.3f]", l2, a2, b2);
+
+                ImGui::Text("\nEuclidean difference RGB: %.3f", my_distance(color1, color2, 3));
+                ImGui::Text("Euclidean difference LAB: %.3f", my_distance(lab1, lab2, 3));
+                space_out();
+
+                if (ImGui::Button("Show color amount"))
+                {
+                    print_color_prob(pixels, imgWidth, imgHeight);
+                }
+
+            }
+
             // static int p1[2] = { 0, 0 };
 
             // ImGui::DragInt2("mimimi", p1, 1, 0, 9);
@@ -689,6 +721,7 @@ int main(int, char**)
             space_out(1, 1);
 
             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
+            ImGui::Text("Image dimensions: [%dx%d]", imgWidth, imgHeight);
             ImGui::End();
         }
         if (show_demo_window) {
@@ -1340,7 +1373,7 @@ void rgb2hsv(uint32_t hex_color, float* h, float* s, float* v) {
         if (*h < 0.0f) {
             *h += 360.0f;
         }
-        *h /= 360.0f; // Normaliza o valor de H para [0.0, 1.0]
+        // *h /= 360.0f; // Normaliza o valor de H para [0.0, 1.0]
     }
 }
 
@@ -2236,4 +2269,85 @@ void apply_rotation(uint32_t* pixels, int w, int h, float angle, bool bilinear)
     // Adicionar a imagem original ao histórico de desfazer
     undo_stack.push(old_pixels);
     undo_log_stack.push("rotation");
+}
+
+float my_distance(float* arr1, float* arr2, size_t dimensions)
+{
+    float inner = 0;
+
+    for (size_t i = 0; i < dimensions; ++i)
+    {
+        inner += std::pow((arr1[i] - arr2[i]), 2);
+    }
+
+    return std::sqrt(inner);
+}
+
+#include <cmath>
+#include <cstdint>
+
+void rgb_to_lab(float* rgb, float* l, float* a, float* b) {
+    // Extract the R, G, B components from the hex_color
+    float r  = rgb[0];
+    float g  = rgb[1];
+    float b_ = rgb[2];
+
+    // Convert RGB to sRGB
+    auto to_linear = [](float c) -> float {
+        return (c <= 0.04045f) ? (c / 12.92f) : std::pow((c + 0.055f) / 1.055f, 2.4f);
+    };
+
+    r = to_linear(r);
+    g = to_linear(g);
+    b_ = to_linear(b_);
+
+    // Convert linear RGB to XYZ color space
+    float x = r * 0.4124564f + g * 0.3575761f + b_ * 0.1804375f;
+    float y = r * 0.2126729f + g * 0.7151522f + b_ * 0.0721750f;
+    float z = r * 0.0193339f + g * 0.1191920f + b_ * 0.9503041f;
+
+    // Normalize for D65 white point
+    x /= 0.95047f;
+    y /= 1.00000f;
+    z /= 1.08883f;
+
+    // Convert XYZ to LAB
+    auto f = [](float t) -> float {
+        return (t > std::pow(6.0f / 29.0f, 3.0f)) ? std::pow(t, 1.0f / 3.0f) : (1.0f / 3.0f) * std::pow(29.0f / 6.0f, 2.0f) * t + 4.0f / 29.0f;
+    };
+
+    float fx = f(x);
+    float fy = f(y);
+    float fz = f(z);
+
+    *l = 116.0f * fy - 16.0f;
+    *a = 500.0f * (fx - fy);
+    *b = 200.0f * (fy - fz);
+}
+
+// Example usage:
+// uint32_t color = 0xE9322C; // RGB color 233, 50, 44
+// float l, a, b;
+// rgb_to_lab(color, &l, &a, &b);
+
+void print_color_prob(uint32_t* pixels, int w, int h)
+{
+    int* probs = new int[0xffffff];
+
+    memset(probs, 0, 0xffffff);
+
+    for (int i = 0; i < w*h; ++i)
+    {
+        probs[(pixels[i] >> 8)]++;
+    }
+
+    for (int i = 0; i < 0xffffff; ++i)
+    {
+        if (probs[i] > 10)
+        {
+            printf("[%d, %d, %d] = %d\n", (i >> 16) & 0xff, (i >> 8) & 0xff, (i >> 0) & 0xff, probs[i]);
+        }
+    }
+
+    delete[] probs;
 }
