@@ -2349,9 +2349,7 @@ float lab_distance(uint32_t col1, uint32_t col2)
 
 void print_color_prob(uint32_t* pixels, int w, int h)
 {
-    int* probs = new int[0xffffff+1];
-
-    memset(probs, 0, 0xffffff);
+    std::vector<int> probs(0xffffff, 0);
 
     for (int i = 0; i < w*h; ++i)
     {
@@ -2399,6 +2397,4 @@ void print_color_prob(uint32_t* pixels, int w, int h)
         (second_most_common_color >>  8) & 0xff,
         (second_most_common_color >>  0) & 0xff, probs[second_most_common_color]);
     printf("\nExistem %d cores na imagem.\n", qtde_cores);
-
-    delete[] probs;
 }
