@@ -71,7 +71,13 @@ KIMS (Kleros Image Manipulation Software) is an image processing software develo
 - [x] Sépia (escala de cinza amarelada)
 - [x] Escala pelo vizinho mais próximo e linear
 - [x] Rotação pelo vizinho mais próximo e linear
+- [ ] Compressão de Imagens
 
+## Image Compression Ideas
+- 1. Check the Y most common colors
+- 2. For each X common color, check for the Z colors closest to them and replace by X
+- 3. That should reduce the amount of colors in the image, further helping RLE 
+- 4. Huffman coding and Fourier compressing
 
 ## Supported Platforms
 

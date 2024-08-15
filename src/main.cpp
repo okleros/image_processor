@@ -2330,9 +2330,26 @@ void rgb_to_lab(float* rgb, float* l, float* a, float* b) {
 // float l, a, b;
 // rgb_to_lab(color, &l, &a, &b);
 
+float lab_distance(uint32_t col1, uint32_t col2)
+{
+    float r, g, b, a, l_, a_, b_;
+
+    convert_hex_to_RGBA(col1, &r, &g, &b, &a);
+    float col1rgb[3] = { r,  g,  b};
+    rgb_to_lab(col1rgb, &l_, &a_, &b_);
+    float col1lab[3] = {l_, a_, b_};
+
+    convert_hex_to_RGBA(col2, &r, &g, &b, &a);
+    float col2rgb[3] = { r,  g,  b};
+    rgb_to_lab(col2rgb, &l_, &a_, &b_);
+    float col2lab[3] = {l_, a_, b_};
+
+    return my_distance(col2lab, col1lab, 3);
+}
+
 void print_color_prob(uint32_t* pixels, int w, int h)
 {
-    int* probs = new int[0xffffff];
+    int* probs = new int[0xffffff+1];
 
     memset(probs, 0, 0xffffff);
 
@@ -2341,13 +2358,47 @@ void print_color_prob(uint32_t* pixels, int w, int h)
         probs[(pixels[i] >> 8)]++;
     }
 
-    for (int i = 0; i < 0xffffff; ++i)
+    int qtde_cores = 0;
+    int most_common_color = 0;
+    int second_most_common_color = 0;
+
+    for (int i = 0; i <= 0xffffff; ++i)
     {
-        if (probs[i] > 10)
+        if (probs[i] > 0)
         {
-            printf("[%d, %d, %d] = %d\n", (i >> 16) & 0xff, (i >> 8) & 0xff, (i >> 0) & 0xff, probs[i]);
+            // printf("[%d, %d, %d] = %d\n", (i >> 16) & 0xff, (i >> 8) & 0xff, (i >> 0) & 0xff, probs[i]);
+            
+            if (probs[i] > probs[most_common_color]) {
+                second_most_common_color = most_common_color;
+                most_common_color = i;
+            }
+
+            qtde_cores++;
+        }
+
+    }
+
+    for (int i = 0; i < w*h; ++i)
+    {
+        if (lab_distance(pixels[i], (most_common_color << 8) | 0xff) < 1.6)
+        {
+            pixels[i] = (most_common_color << 8) | 0xff;
+        }
+        if (lab_distance(pixels[i], (second_most_common_color << 8) | 0xff) < 1.6)
+        {
+            pixels[i] = (second_most_common_color << 8) | 0xff;
         }
     }
+    
+    printf("\nMOST COMMON: [%d, %d, %d] = %d\n",
+        (most_common_color >> 16) & 0xff,
+        (most_common_color >>  8) & 0xff,
+        (most_common_color >>  0) & 0xff, probs[most_common_color]);
+    printf("\nMOST COMMON: [%d, %d, %d] = %d\n",
+        (second_most_common_color >> 16) & 0xff,
+        (second_most_common_color >>  8) & 0xff,
+        (second_most_common_color >>  0) & 0xff, probs[second_most_common_color]);
+    printf("\nExistem %d cores na imagem.\n", qtde_cores);
 
     delete[] probs;
 }
