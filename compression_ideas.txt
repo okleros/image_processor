@@ -1,0 +1,6 @@
+1. color quantization in CIELAB color space
+	1.1 CIELAB is more perceptually accurate to human eyes, so the quantization should be better?
+2. since each pixel is now 8 bits [in case we have 256 colors, which sounds enough], we can now apply generic lzw compression method, but still not sure
+3. maybe run-length encoding instead of lzw to remove repetition
+3. huffman code to reduce the size of the codes we use for each color? since huffman is variable size codes, idk how it'd behave though, since we have all 256 codes occupied by colors (thx quantization!!!)
+
