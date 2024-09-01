@@ -23,7 +23,9 @@ Co-author: Unknown
 #include <stack>
 #include <SDL.h>
 #include <omp.h>
-
+#include <chrono>
+#include <cmath>
+#include <cstdint>
 
 #define MAX_STEG_TEXT 524288
 #define SIDEBAR_SIZE 360
@@ -107,7 +109,7 @@ void file_dialog(SDL_Renderer* renderer, SDL_Texture** texture, uint32_t** pixel
 void IMG_SaveBMP(uint32_t* pixels, const char* filename, int width, int height);
 void clear_stack(std::stack<uint32_t*>& stack);
 uint32_t hsi2rgb(float h, float s, float i);
-void rgb_to_lab(float* rgb, float* l, float* a, float* b);
+void rgb_to_lab(float* rgb, float* lab);
 void space_out(int rep1 = 1, int rep2 = 1);
 void img_save(uint32_t* pixels, int width, int height);
 void rgb2hsi(uint32_t rgb, float* h, float* s, float* i);
@@ -699,27 +701,27 @@ int main(int, char**)
             if (ImGui::CollapsingHeader("Data compression tests"))
             {
                 space_out();
-                // RGB color space
-                static float color1[3]{0.0f, 1.0f, 0.0f};
-                static float color2[3]{0.0f, 1.0f, 0.0f};
+                // // RGB color space
+                // static float color1[3]{0.0f, 1.0f, 0.0f};
+                // static float color2[3]{0.0f, 1.0f, 0.0f};
 
-                // LAB color space
-                static float l1, a1, b1, l2, a2, b2;
+                // // LAB color space
+                // static float l1, a1, b1, l2, a2, b2;
 
-                rgb_to_lab(color1, &l1, &a1, &b1);
-                rgb_to_lab(color2, &l2, &a2, &b2);
+                // rgb_to_lab(color1, &l1, &a1, &b1);
+                // rgb_to_lab(color2, &l2, &a2, &b2);
 
-                float lab1[3] = {l1, a1, b1};
-                float lab2[3] = {l2, a2, b2};
+                // float lab1[3] = {l1, a1, b1};
+                // float lab2[3] = {l2, a2, b2};
 
-                ImGui::ColorEdit3("##MyColor1", color1);
-                ImGui::Text("LAB color1: [%.3f, %.3f, %.3f]", l1, a1, b1);
-                ImGui::ColorEdit3("##MyColor2", color2);
-                ImGui::Text("LAB color2: [%.3f, %.3f, %.3f]", l2, a2, b2);
+                // ImGui::ColorEdit3("##MyColor1", color1);
+                // ImGui::Text("LAB color1: [%.3f, %.3f, %.3f]", l1, a1, b1);
+                // ImGui::ColorEdit3("##MyColor2", color2);
+                // ImGui::Text("LAB color2: [%.3f, %.3f, %.3f]", l2, a2, b2);
 
-                ImGui::Text("\nEuclidean difference RGB: %.3f", my_distance(color1, color2, 3));
-                ImGui::Text("Euclidean difference LAB: %.3f", my_distance(lab1, lab2, 3));
-                space_out();
+                // ImGui::Text("\nEuclidean difference RGB: %.3f", my_distance(color1, color2, 3));
+                // ImGui::Text("Euclidean difference LAB: %.3f", my_distance(lab1, lab2, 3));
+                // space_out();
 
                 if (ImGui::Button("Show color amount"))
                 {
@@ -1422,7 +1424,7 @@ void rgb2hsv(uint32_t hex_color, float* h, float* s, float* v) {
 
 // Função para converter HSV para RGB
 uint32_t hsv2rgb(float h, float s, float v) {
-    float r, g, b;
+    float r=0, g=0, b=0;
 
     int i = static_cast<int>(h * 6.0f);
     float f = h * 6.0f - i;
@@ -2318,18 +2320,15 @@ float my_distance(float* arr1, float* arr2, size_t dimensions)
 {
     float inner = 0;
 
-    for (size_t i = 0; i < dimensions; ++i)
-    {
-        inner += std::pow((arr1[i] - arr2[i]), 2);
+    for (size_t i = 0; i < dimensions; ++i) {
+	float diff = arr1[i] - arr2[i];
+	inner += diff * diff;
     }
 
     return std::sqrt(inner);
 }
 
-#include <cmath>
-#include <cstdint>
-
-void rgb_to_lab(float* rgb, float* l, float* a, float* b) {
+void rgb_to_lab(float* rgb, float* lab) {
     // Extract the R, G, B components from the hex_color
     float r  = rgb[0];
     float g  = rgb[1];
@@ -2363,9 +2362,9 @@ void rgb_to_lab(float* rgb, float* l, float* a, float* b) {
     float fy = f(y);
     float fz = f(z);
 
-    *l = 116.0f * fy - 16.0f;
-    *a = 500.0f * (fx - fy);
-    *b = 200.0f * (fy - fz);
+    lab[0] = 116.0f * fy - 16.0f;
+    lab[1] = 500.0f * (fx - fy);
+    lab[2] = 200.0f * (fy - fz);
 }
 
 // Example usage:
@@ -2375,17 +2374,17 @@ void rgb_to_lab(float* rgb, float* l, float* a, float* b) {
 
 float lab_distance(uint32_t col1, uint32_t col2)
 {
-    float r, g, b, a, l_, a_, b_;
+    float r, g, b, a;
 
     convert_hex_to_RGBA(col1, &r, &g, &b, &a);
-    float col1rgb[3] = { r,  g,  b};
-    rgb_to_lab(col1rgb, &l_, &a_, &b_);
-    float col1lab[3] = {l_, a_, b_};
+    float col1rgb[3] = { r,  g,  b };
+    float col1lab[3];
+    rgb_to_lab(col1rgb, col1lab);
 
     convert_hex_to_RGBA(col2, &r, &g, &b, &a);
-    float col2rgb[3] = { r,  g,  b};
-    rgb_to_lab(col2rgb, &l_, &a_, &b_);
-    float col2lab[3] = {l_, a_, b_};
+    float col2rgb[3] = { r,  g,  b };
+    float col2lab[3];
+    rgb_to_lab(col2rgb, col2lab);
 
     return my_distance(col2lab, col1lab, 3);
 }
@@ -2442,7 +2441,45 @@ void print_color_prob(uint32_t* pixels, int w, int h)
     printf("\nExistem %d cores na imagem.\n", qtde_cores);
 }
 
-palette k_means(float** in, uint8_t* out, size_t k, size_t data_size, size_t data_depth=3, int seed=69, size_t max_iter=20)
+void initialize_centroids_kmeans_plus_plus(float** in, float** centroids, size_t k, size_t data_size, size_t data_depth)
+{
+    // Step 1: Randomly select the first centroid from the data points
+    int first_index = rand() % data_size;
+    std::memcpy(centroids[0], in[first_index], data_depth * sizeof(float));
+
+    std::vector<float> distances(data_size, std::numeric_limits<float>::max());
+
+    // Step 2: Select remaining centroids
+    for (size_t i = 1; i < k; ++i) {
+        float total_distance = 0.0;
+
+        // Update the distances and total distance
+        for (size_t j = 0; j < data_size; ++j) {
+            float dist = my_distance(in[j], centroids[i - 1], data_depth);
+            if (dist < distances[j]) {
+                distances[j] = dist;
+            }
+            total_distance += distances[j];
+        }
+
+        // Select the next centroid with a probability proportional to distance squared
+        float threshold = static_cast<float>(rand()) / RAND_MAX * total_distance;
+        float cumulative_distance = 0.0;
+        size_t next_index = 0;
+
+        for (size_t j = 0; j < data_size; ++j) {
+            cumulative_distance += distances[j];
+            if (cumulative_distance >= threshold) {
+                next_index = j;
+                break;
+            }
+        }
+
+        std::memcpy(centroids[i], in[next_index], data_depth * sizeof(float));
+    }
+}
+
+palette k_means(float** in, uint8_t* out, size_t k, size_t data_size, size_t data_depth=3, int seed=69, size_t max_iter=200)
 {
     // 1. initialize k centroids
     // 2. assign points to each centroid based on euclidean distance [might try mahalanobis later]
@@ -2452,36 +2489,63 @@ palette k_means(float** in, uint8_t* out, size_t k, size_t data_size, size_t dat
     // this function returns an array of arrays containing the optimal centroids
 
     srand(seed);
+    float tolerance = 0.2f;
     bool converged = false;
     float** centroids = new float*[k];
+    float** sums = new float*[k];
     size_t* labels = new size_t[data_size];
+    size_t* counts = new size_t[k];
     
-    // creating the k clusters and assigning data 
+    memset(counts, 0, k*sizeof(size_t));
+    
+    // creating the k clusters and assigning data using the kmeans++ initialization method
     for (size_t i = 0; i < k; ++i) {
-	int cluster = rand() % data_size;
+	// int cluster = rand() % data_size;
 	centroids[i] = new float[data_depth];
-	memcpy(centroids[i], in[cluster], data_depth*sizeof(float));
+	// memcpy(centroids[i], in[cluster], data_depth*sizeof(float));
+	sums[i] = new float[data_depth];
     }
+
+    initialize_centroids_kmeans_plus_plus(in, centroids, k, data_size, data_depth);
 
     for (size_t i = 0; i < max_iter && !converged; ++i) {
 	converged = true;	
 
+	for (size_t w = 0; w < k; ++w)
+	    memset(sums[w], 0, data_depth*sizeof(*sums[w]));
+
+	memset(counts, 0, k*sizeof(*counts));
+	
 	// step 2: assign each point to the nearest centroid
 	#pragma omp parallel for
-	for (size_t j = 0; j < data_size; ++j) {	
+	for (size_t j = 0; j < data_size; ++j) {
+	    // float lab1[3];
+	    // rgb_to_lab(in[j], lab1);
+	    
 	    float min_dist = std::numeric_limits<float>::max();
 	    size_t best_centroid = 0;
 	    
 	    for (size_t w = 0; w < k; ++w) {
-		float dist = my_distance(in[j], centroids[w], data_depth);	
-
+		// float lab2[3];
+		// rgb_to_lab(centroids[w], lab2);
+		
+		float dist = my_distance(in[j], centroids[w], data_depth);
+		// float dist = my_distance(lab1, lab2, data_depth);
+		
 		if (dist < min_dist) {
 		    min_dist = dist;
 		    best_centroid = w;
 		}
 	    }
-
-	    // update the label if the point is closer to another centroid
+	    
+	    // #pragma omp critical
+            // {
+                for (size_t d = 0; d < data_depth; ++d) {
+                    sums[best_centroid][d] += in[j][d];
+                }
+                counts[best_centroid]++;
+            // }
+	    
 	    if (labels[j] != best_centroid) {
 		labels[j] = best_centroid;
 		converged = false;
@@ -2490,125 +2554,475 @@ palette k_means(float** in, uint8_t* out, size_t k, size_t data_size, size_t dat
 	    out[j] = static_cast<uint8_t>(best_centroid);
 	}
 
+	converged = true;
 	// step 3: recompute centroids
-	float** new_centroids = new float*[k];
-	size_t* counts = new size_t[k];
-
-	for (size_t w = 0; w < k; ++w) {
-	    new_centroids[w] = new float[data_depth];
-	    memset(new_centroids[w], 0, data_depth*sizeof(float));
-	}
-
-	for (size_t j = 0; j < data_size; ++j) {
-	    size_t cluster = labels[j];
-
-	    for (size_t d = 0; d < data_depth; ++d) {
-		new_centroids[cluster][d] += in[j][d];
-	    }
-
-	    counts[cluster]++;
-	}
-
 	for (size_t w = 0; w < k; ++w) {
 	    if (counts[w] > 0) {
 		for (size_t d = 0; d < data_depth; ++d) {
-		    new_centroids[w][d] /= counts[w];
+		    sums[w][d] /= counts[w];
 		}
 	    }
+	    
+	    float dist = my_distance(centroids[w], sums[w], data_depth);
+	    if (dist > tolerance) {
+		converged = false;
+	    }
+
+	    memcpy(centroids[w], sums[w], data_depth*sizeof(float));
 	}
 
-	// update centroids and clean the old ones
-	for (size_t w = 0; w < k; ++w) {
-            memcpy(centroids[w], new_centroids[w], data_depth * sizeof(float)); // Atualiza em vez de realocar
-            delete[] new_centroids[w];
-        }
-
-	delete[] new_centroids;
-	delete[] counts;
+	std::cout << "Iteration " << i+1 << std::endl;
     }
 
+    for (size_t w = 0; w < k; ++w)
+	delete[] sums[w];
+	    
+    delete[] sums;
     delete[] labels;
+    delete[] counts;
+	
     return centroids;
 }
 
+std::vector<uint8_t> flag_rle_encode(const std::vector<uint8_t>& data) {
+    std::vector<uint8_t> encoded;
+    size_t size = data.size();
+    if (size == 0) return encoded;
+
+    size_t i = 0;
+    while (i < size) {
+        uint8_t current_byte = data[i];
+        size_t run_length = 1;
+
+        // Check for repeated bytes (run of the same value)
+        while (i + run_length < size && data[i + run_length] == current_byte && run_length < 127) {
+            ++run_length;
+        }
+
+        if (run_length > 1) {
+            // Encode repeated sequence with high bit set (flag)
+            encoded.push_back(0x80 | static_cast<uint8_t>(run_length));  // High bit = 1
+            encoded.push_back(current_byte);
+            i += run_length;
+        } else {
+            // Encode unique sequence
+            size_t unique_start = i;
+            run_length = 1;
+            // Find the run of unique bytes
+            while (i + run_length < size && data[i + run_length] != data[i + run_length - 1] && run_length < 127) {
+                ++run_length;
+            }
+            // Encode the length of unique values
+            encoded.push_back(static_cast<uint8_t>(run_length));  // High bit = 0
+            for (size_t j = 0; j < run_length; ++j) {
+                encoded.push_back(data[i + j]);
+            }
+            i += run_length;
+        }
+    }
+
+    return encoded;
+}
+
+std::vector<uint8_t> rle_encode(const std::vector<uint8_t>& data, uint8_t tolerance = 0) {
+    std::vector<uint8_t> encoded;
+    size_t size = data.size();
+
+    size_t i = 0;
+    while (i < size) {
+        uint8_t current_byte = data[i];
+        size_t run_length = 1;
+
+        // Count how many times a byte within tolerance repeats consecutively
+        while (i + run_length < size &&
+               std::abs(static_cast<int>(data[i + run_length]) - static_cast<int>(current_byte)) <= tolerance &&
+               run_length < 255) {
+            ++run_length;
+        }
+
+        // Handle the case where run_length exceeds 255
+        while (run_length > 255) {
+            encoded.push_back(current_byte);
+            encoded.push_back(255); // Run length maxed out at 255
+            run_length -= 255;
+        }
+
+        // Encode the remaining part of the run
+        encoded.push_back(current_byte);
+        encoded.push_back(static_cast<uint8_t>(run_length));
+
+        i += run_length;
+    }
+
+    return encoded;
+}
+
+std::vector<uint8_t> flag_rle_decode(const std::vector<uint8_t>& encoded) {
+    std::vector<uint8_t> decoded;
+    size_t size = encoded.size();
+    size_t i = 0;
+
+    while (i < size) {
+        uint8_t flag = encoded[i++];
+        if (flag & 0x80) { // High bit set, repeated sequence
+            size_t count = flag & 0x7F; // Mask out the high bit
+            uint8_t value = encoded[i++];
+            for (size_t j = 0; j < count; ++j) {
+                decoded.push_back(value);
+            }
+        } else { // Unique sequence
+            size_t count = flag;
+            for (size_t j = 0; j < count; ++j) {
+                decoded.push_back(encoded[i++]);
+            }
+        }
+    }
+
+    return decoded;
+}
+
+
+// std::vector<uint8_t> rle_encode(const std::vector<uint8_t>& data) {
+//     std::vector<uint8_t> encoded;
+//     size_t size = data.size();
+
+//     size_t i = 0;
+//     while (i < size) {
+//         uint8_t current_byte = data[i];
+//         size_t run_length = 1;
+
+//         // Count how many times the current byte repeats consecutively
+//         while (i + run_length < size && data[i + run_length] == current_byte && run_length < 255) {
+//             ++run_length;
+//         }
+
+//         // Handle the case where run_length exceeds 255
+//         while (run_length > 255) {
+//             encoded.push_back(current_byte);
+//             encoded.push_back(255);
+//             run_length -= 255;
+//         }
+
+//         // Encode the remaining part of the run
+//         encoded.push_back(current_byte);
+//         encoded.push_back(static_cast<uint8_t>(run_length));
+
+//         i += run_length;
+//     }
+
+//     return encoded;
+// }
+
 // .kips is my custom image format
-void img_save_kips(uint32_t* pixels, const char* filename, int w, int h)
-{
-    uint8_t* quantized_image = new uint8_t[w*h];
-    float** in = new float*[w*h];
+// void img_save_kips(uint32_t* pixels, const char* filename, int w, int h)
+// {
+//     uint8_t* quantized_image = new uint8_t[w*h];
+//     float** in = new float*[w*h];
+//     size_t depth = 3;
+//     size_t num_colors = 256;
+    
+//     for (int i = 0; i < w*h; ++i) {
+// 	in[i] = new float[depth];
+
+// 	in[i][0] = static_cast<float>((pixels[i] >> 24) & 0xff);
+// 	in[i][1] = static_cast<float>((pixels[i] >> 16) & 0xff);
+// 	in[i][2] = static_cast<float>((pixels[i] >>  8) & 0xff);
+//     }
+
+//     auto start = std::chrono::high_resolution_clock::now();
+//     palette p = k_means(in, quantized_image, num_colors, w*h, depth);
+//     auto end = std::chrono::high_resolution_clock::now();
+    
+//     std::chrono::duration<double, std::milli> ms_double = end - start;
+//     std::cout << "Compression took " << ms_double.count() * 1e-3 << " seconds.\n";
+    
+//     std::ofstream out_file(filename, std::ios::binary);
+
+//     if (out_file.is_open())
+//     {
+// 	out_file.write(reinterpret_cast<const char*>(&w), 2);
+// 	out_file.write(reinterpret_cast<const char*>(&h), 2);
+
+// 	// writing the color palette to the final image
+// 	for (size_t i = 0; i < num_colors; ++i) {
+// 	    for (size_t j = 0; j < depth; ++j) {
+// 		char color = static_cast<char>(p[i][j]);
+// 		out_file.write(&color, 1);
+// 	    }
+// 	}
+	
+// 	for (int i = 0; i < w*h; ++i)
+//         {
+// 	    uint8_t out_color = quantized_image[i];
+	    	    
+// 	    out_file.write(reinterpret_cast<const char*>(&out_color), 1);
+//         }
+
+//         out_file.close();
+    
+//     } else {
+//         std::cerr << "Unable to open file " << filename << " for reading\n";
+//     }
+// }
+
+// uint32_t* img_load_kips(const char* filename, int* w, int* h)
+// {
+//     std::ifstream in_file(filename, std::ios::binary);
+    
+//     int imw, imh;
+
+//     uint32_t* pixels = nullptr;
+
+//     if (in_file.is_open())
+//     {
+//         in_file.read(reinterpret_cast<char*>(&imw), 2);
+//         in_file.read(reinterpret_cast<char*>(&imh), 2);
+    
+//         *w = imw; *h = imh;
+
+//         pixels = new uint32_t[imw * imh]; 
+
+//         int i = 0;
+
+// 	uint32_t* palette = new uint32_t[256];
+	
+// 	for (int i = 0; i < 256; ++i) {
+// 	    uint8_t r, g, b;
+	    
+// 	    in_file.read((char*)(&r), 1);
+// 	    in_file.read((char*)(&g), 1);
+// 	    in_file.read((char*)(&b), 1);
+	    
+// 	    palette[i] = (r << 24) | (g << 16) | (b << 8) | 0xff;
+// 	}
+	
+//         while(!in_file.eof()) {
+//             uint8_t qcolor;
+
+//             in_file.read(reinterpret_cast<char*>(&qcolor), 1);
+
+// 	    pixels[i++] = palette[qcolor];
+//         }
+//     }
+
+//     return pixels;    
+// }
+
+std::vector<uint8_t> rle_decode(const std::vector<uint8_t>& encoded) {
+    std::vector<uint8_t> decoded;
+    size_t size = encoded.size();
+
+    for (size_t i = 0; i < size; i += 2) {
+        if (i + 1 >= size) break; // Prevent out-of-bounds access
+
+        uint8_t byte_value = encoded[i];
+        uint8_t count = encoded[i + 1];
+
+        // Append `count` instances of `byte_value` to the decoded vector
+        decoded.insert(decoded.end(), count, byte_value);
+    }
+
+    return decoded;
+}
+
+void img_save_kips(uint32_t* pixels, const char* filename, int w, int h) {
+    uint8_t* quantized_image = new uint8_t[w * h];
+    float** in = new float*[w * h];
     size_t depth = 3;
     size_t num_colors = 256;
     
-    for (int i = 0; i < w*h; ++i) {
-	in[i] = new float[depth];
+    for (int i = 0; i < w * h; ++i) {
+        in[i] = new float[depth];
+        in[i][0] = static_cast<float>((pixels[i] >> 24) & 0xff);
+        in[i][1] = static_cast<float>((pixels[i] >> 16) & 0xff);
+        in[i][2] = static_cast<float>((pixels[i] >> 8) & 0xff);
+    }
 
-	in[i][0] = static_cast<float>((pixels[i] >> 24) & 0xff);
-	in[i][1] = static_cast<float>((pixels[i] >> 16) & 0xff);
-	in[i][2] = static_cast<float>((pixels[i] >>  8) & 0xff);
+    auto start = std::chrono::high_resolution_clock::now();
+    palette p = k_means(in, quantized_image, num_colors, w * h, depth);
+    auto end = std::chrono::high_resolution_clock::now();
+    
+    std::chrono::duration<double, std::milli> ms_double = end - start;
+        
+    // Create a vector to hold the data
+    std::vector<uint8_t> byte_array;
+
+    // Reserve space in the vector
+    byte_array.reserve(2 + 2 + num_colors * depth + w * h);
+
+    // Write image dimensions (width and height)
+    byte_array.push_back(static_cast<uint8_t>(w & 0xFF));        // Low byte of width
+    byte_array.push_back(static_cast<uint8_t>((w >> 8) & 0xFF)); // High byte of width
+    byte_array.push_back(static_cast<uint8_t>(h & 0xFF));        // Low byte of height
+    byte_array.push_back(static_cast<uint8_t>((h >> 8) & 0xFF)); // High byte of height
+
+    // Write the color palette
+    for (size_t i = 0; i < num_colors; ++i) {
+        for (size_t j = 0; j < depth; ++j) {
+            byte_array.push_back(static_cast<uint8_t>(p[i][j]));
+        }
     }
     
-    palette p = k_means(in, quantized_image, num_colors, w*h, depth);
+    // Write the quantized image data
+    for (int i = 0; i < w * h; ++i) {
+        byte_array.push_back(quantized_image[i]);
+    }
 
-    std::cout << "finished kmeans\n";
-    
-    std::ofstream out_file(filename, std::ios::binary);
-
-    if (out_file.is_open())
-    {
-	out_file.write(reinterpret_cast<const char*>(&w), 2);
-	out_file.write(reinterpret_cast<const char*>(&h), 2);
-
-	for (size_t i = 0; i < num_colors; ++i) {
-	    for (size_t j = 0; j < depth; ++j) {
-		uint8_t color = (uint8_t)p[i][j];
-		
-		out_file.write(reinterpret_cast<const char*>(&color), 1);
-	    }
-	}
-	
-	for (int i = 0; i < w*h; ++i)
-        {
-	    uint8_t out_color = quantized_image[i];
-	    	    
-	    out_file.write(reinterpret_cast<const char*>(&out_color), 1);
-        }
-
-        out_file.close();
-    
+    // Write the byte array to the file
+    std::ofstream out_filekm("../res/km.kips", std::ios::binary);
+    if (out_filekm.is_open()) {
+        out_filekm.write(reinterpret_cast<const char*>(byte_array.data()), byte_array.size());
+        out_filekm.close();
     } else {
-        std::cerr << "Unable to open file " << filename << " for reading\n";
+        std::cerr << "Unable to open file " << "../res/km.kips" << " for writing\n";
     }
-}
-
-uint32_t* img_load_kips(const char* filename, int* w, int* h)
-{
-    std::ifstream in_file(filename, std::ios::binary);
     
-    int imw, imh;
-
-    uint32_t* pixels = nullptr;
-
-    if (in_file.is_open())
-    {
-        in_file.read(reinterpret_cast<char*>(&imw), 2);
-        in_file.read(reinterpret_cast<char*>(&imh), 2);
+    std::vector<uint8_t> rle_encoded = flag_rle_encode(byte_array);
     
-        *w = imw; *h = imh;
-
-        pixels = new uint32_t[imw * imh]; 
-
-        int i = 0;
-
-        while(!in_file.eof()) {
-            uint32_t color;
-
-            in_file.read(reinterpret_cast<char*>(&color), 3);
-
-            color = (color << 8) | 0xff;
-
-            pixels[i++] = color;
-        }
+    std::cout << "Compression took " << ms_double.count() * 1e-3 << " seconds.\n";
+    
+    // Write the byte array to the file
+    std::ofstream out_file(filename, std::ios::binary);
+    if (out_file.is_open()) {
+        out_file.write(reinterpret_cast<const char*>(rle_encoded.data()), rle_encoded.size());
+        out_file.close();
+    } else {
+        std::cerr << "Unable to open file " << filename << " for writing\n";
     }
 
-    return pixels;    
+    // Clean up
+    delete[] quantized_image;
+    for (int i = 0; i < w * h; ++i) {
+        delete[] in[i];
+    }
+    delete[] in;
 }
+
+uint32_t* img_load_kips(const char* filename, int* w, int* h) {
+    std::ifstream in_file(filename, std::ios::binary | std::ios::ate);
+    if (!in_file.is_open()) {
+        std::cerr << "Error: Unable to open file " << filename << std::endl;
+        return nullptr;
+    }
+
+    // Get the size of the file
+    std::streamsize file_size = in_file.tellg();
+    in_file.seekg(0, std::ios::beg);
+
+    // Read the entire file into a vector
+    std::vector<uint8_t> file_data(file_size);
+    if (!in_file.read(reinterpret_cast<char*>(file_data.data()), file_size)) {
+        std::cerr << "Error: Failed to read file data" << std::endl;
+        return nullptr;
+    }
+    in_file.close();
+
+    // Decode the entire RLE-encoded data
+    std::vector<uint8_t> decoded_data = flag_rle_decode(file_data);
+
+    // Extract the width and height from the decoded data
+    if (decoded_data.size() < 4) {
+        std::cerr << "Error: Decoded data is too small to contain dimensions" << std::endl;
+        return nullptr;
+    }
+
+    // Extract image dimensions
+    int width = (decoded_data[1] << 8) | decoded_data[0];
+    int height = (decoded_data[3] << 8) | decoded_data[2];
+    *w = width;
+    *h = height;
+
+    std::cout << width << " " << height << std::endl;
+
+    size_t num_colors = 256; // Assuming 256 colors in the palette
+    size_t palette_size = num_colors * 3; // 3 bytes per color (R, G, B)
+    size_t image_data_size = width * height;
+
+    // Check if the decoded data has enough size to contain palette and image data
+    if (decoded_data.size() < 4 + palette_size + image_data_size) {
+        std::cerr << "Error: Decoded data size does not match expected size. Has " << decoded_data.size() << std::endl;
+        return nullptr;
+    }
+
+    // Extract the palette
+    uint32_t* palette = new uint32_t[num_colors];
+    for (size_t i = 0; i < num_colors; ++i) {
+        uint8_t r = decoded_data[4 + i * 3];
+        uint8_t g = decoded_data[4 + i * 3 + 1];
+        uint8_t b = decoded_data[4 + i * 3 + 2];
+        palette[i] = (r << 24) | (g << 16) | (b << 8) | 0xff; // Including alpha channel
+    }
+
+    // Extract the pixel data
+    uint32_t* pixels = new uint32_t[width * height];
+    for (size_t i = 0; i < image_data_size; ++i) {
+        uint8_t color_index = decoded_data[4 + palette_size + i];
+        pixels[i] = palette[color_index];
+    }
+
+    // Cleanup
+    delete[] palette;
+    return pixels;
+}
+
+// uint32_t* img_load_kips(const char* filename, int* w, int* h)
+// {
+//     // Read and decode the RLE-encoded data from the file
+//     std::ifstream in_file(filename, std::ios::binary);
+//     if (!in_file.is_open()) {
+//         std::cerr << "Unable to open file " << filename << " for reading\n";
+//         return;
+//     }
+    
+//     std::vector<uint8_t> rle_encoded((std::istreambuf_iterator<char>(in_file)), std::istreambuf_iterator<char>());
+//     in_file.close();
+
+//     // Decode the RLE-encoded data
+//     std::vector<uint8_t> decoded = rle_decode(rle_encoded);
+
+//     // Extract image dimensions and image data
+//     w = (decoded[0] << 8) | decoded[1];
+//     h = (decoded[2] << 8) | decoded[3];
+//     decoded_image.assign(decoded.begin() + 4 + 256 * 3, decoded.end());
+    
+    
+//     uint16_t imw, imh;
+//     in_file.read(reinterpret_cast<char*>(&imw), sizeof(imw));
+//     in_file.read(reinterpret_cast<char*>(&imh), sizeof(imh));
+
+//     if (!in_file) {
+//         std::cerr << "Error: Failed to read image dimensions" << std::endl;
+//         return nullptr;
+//     }
+
+//     *w = imw;
+//     *h = imh;
+
+//     uint32_t* pixels = new uint32_t[imw * imh]; 
+//     uint32_t* palette = new uint32_t[256];
+
+//     for (int i = 0; i < 256; ++i) {
+//         uint8_t r, g, b;
+//         in_file.read(reinterpret_cast<char*>(&r), sizeof(r));
+//         in_file.read(reinterpret_cast<char*>(&g), sizeof(g));
+//         in_file.read(reinterpret_cast<char*>(&b), sizeof(b));
+//         palette[i] = (r << 24) | (g << 16) | (b << 8) | 0xff;
+//     }
+
+//     int i = 0;
+//     uint8_t qcolor;
+//     while (in_file.read(reinterpret_cast<char*>(&qcolor), sizeof(qcolor))) {
+//         if (i >= imw * imh) {
+//             std::cerr << "Error: Image data exceeds allocated size" << std::endl;
+//             break;
+//         }
+//         pixels[i++] = palette[qcolor];
+//     }
+
+//     if (i != imw * imh) {
+//         std::cerr << "Warning: Image data is incomplete" << std::endl;
+//     }
+
+//     delete[] palette;
+//     return pixels;    
+// }
