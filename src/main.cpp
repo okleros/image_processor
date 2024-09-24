@@ -1,5 +1,5 @@
 /*
-KIMS - Kleros Image Manipularion Software. A poor clone of GIMP or any other Image manipulation
+KIPS - Kleros Image Processing Software. A poor clone of GIMP or any other Image manipulation
 software out there. Made entirely for a uni project, and definitely not intended to copy any other
 software at all (or be copied, this code sucks!)
 
@@ -2318,10 +2318,10 @@ void apply_rotation(uint32_t* pixels, int w, int h, float angle, bool bilinear)
 
 float my_distance(float* arr1, float* arr2, size_t dimensions)
 {
-    float inner = 0;
+    float diff, inner = 0;
 
     for (size_t i = 0; i < dimensions; ++i) {
-	float diff = arr1[i] - arr2[i];
+	diff = arr1[i] - arr2[i];
 	inner += diff * diff;
     }
 
@@ -2519,16 +2519,17 @@ palette k_means(float** in, uint8_t* out, size_t k, size_t data_size, size_t dat
 	// step 2: assign each point to the nearest centroid
 	#pragma omp parallel for
 	for (size_t j = 0; j < data_size; ++j) {
-	    // float lab1[3];
-	    // rgb_to_lab(in[j], lab1);
-	    
 	    float min_dist = std::numeric_limits<float>::max();
 	    size_t best_centroid = 0;
 	    
 	    for (size_t w = 0; w < k; ++w) {
+		// float lab1[3];
+
+		// rgb_to_lab(in[j], lab1);        
+
 		// float lab2[3];
 		// rgb_to_lab(centroids[w], lab2);
-		
+	       
 		float dist = my_distance(in[j], centroids[w], data_depth);
 		// float dist = my_distance(lab1, lab2, data_depth);
 		
@@ -2606,8 +2607,7 @@ std::vector<uint8_t> flag_rle_encode(const std::vector<uint8_t>& data) {
             i += run_length;
         } else {
             // Encode unique sequence
-            size_t unique_start = i;
-            run_length = 1;
+	    run_length = 1;
             // Find the run of unique bytes
             while (i + run_length < size && data[i + run_length] != data[i + run_length - 1] && run_length < 127) {
                 ++run_length;
@@ -2681,133 +2681,6 @@ std::vector<uint8_t> flag_rle_decode(const std::vector<uint8_t>& encoded) {
     return decoded;
 }
 
-
-// std::vector<uint8_t> rle_encode(const std::vector<uint8_t>& data) {
-//     std::vector<uint8_t> encoded;
-//     size_t size = data.size();
-
-//     size_t i = 0;
-//     while (i < size) {
-//         uint8_t current_byte = data[i];
-//         size_t run_length = 1;
-
-//         // Count how many times the current byte repeats consecutively
-//         while (i + run_length < size && data[i + run_length] == current_byte && run_length < 255) {
-//             ++run_length;
-//         }
-
-//         // Handle the case where run_length exceeds 255
-//         while (run_length > 255) {
-//             encoded.push_back(current_byte);
-//             encoded.push_back(255);
-//             run_length -= 255;
-//         }
-
-//         // Encode the remaining part of the run
-//         encoded.push_back(current_byte);
-//         encoded.push_back(static_cast<uint8_t>(run_length));
-
-//         i += run_length;
-//     }
-
-//     return encoded;
-// }
-
-// .kips is my custom image format
-// void img_save_kips(uint32_t* pixels, const char* filename, int w, int h)
-// {
-//     uint8_t* quantized_image = new uint8_t[w*h];
-//     float** in = new float*[w*h];
-//     size_t depth = 3;
-//     size_t num_colors = 256;
-    
-//     for (int i = 0; i < w*h; ++i) {
-// 	in[i] = new float[depth];
-
-// 	in[i][0] = static_cast<float>((pixels[i] >> 24) & 0xff);
-// 	in[i][1] = static_cast<float>((pixels[i] >> 16) & 0xff);
-// 	in[i][2] = static_cast<float>((pixels[i] >>  8) & 0xff);
-//     }
-
-//     auto start = std::chrono::high_resolution_clock::now();
-//     palette p = k_means(in, quantized_image, num_colors, w*h, depth);
-//     auto end = std::chrono::high_resolution_clock::now();
-    
-//     std::chrono::duration<double, std::milli> ms_double = end - start;
-//     std::cout << "Compression took " << ms_double.count() * 1e-3 << " seconds.\n";
-    
-//     std::ofstream out_file(filename, std::ios::binary);
-
-//     if (out_file.is_open())
-//     {
-// 	out_file.write(reinterpret_cast<const char*>(&w), 2);
-// 	out_file.write(reinterpret_cast<const char*>(&h), 2);
-
-// 	// writing the color palette to the final image
-// 	for (size_t i = 0; i < num_colors; ++i) {
-// 	    for (size_t j = 0; j < depth; ++j) {
-// 		char color = static_cast<char>(p[i][j]);
-// 		out_file.write(&color, 1);
-// 	    }
-// 	}
-	
-// 	for (int i = 0; i < w*h; ++i)
-//         {
-// 	    uint8_t out_color = quantized_image[i];
-	    	    
-// 	    out_file.write(reinterpret_cast<const char*>(&out_color), 1);
-//         }
-
-//         out_file.close();
-    
-//     } else {
-//         std::cerr << "Unable to open file " << filename << " for reading\n";
-//     }
-// }
-
-// uint32_t* img_load_kips(const char* filename, int* w, int* h)
-// {
-//     std::ifstream in_file(filename, std::ios::binary);
-    
-//     int imw, imh;
-
-//     uint32_t* pixels = nullptr;
-
-//     if (in_file.is_open())
-//     {
-//         in_file.read(reinterpret_cast<char*>(&imw), 2);
-//         in_file.read(reinterpret_cast<char*>(&imh), 2);
-    
-//         *w = imw; *h = imh;
-
-//         pixels = new uint32_t[imw * imh]; 
-
-//         int i = 0;
-
-// 	uint32_t* palette = new uint32_t[256];
-	
-// 	for (int i = 0; i < 256; ++i) {
-// 	    uint8_t r, g, b;
-	    
-// 	    in_file.read((char*)(&r), 1);
-// 	    in_file.read((char*)(&g), 1);
-// 	    in_file.read((char*)(&b), 1);
-	    
-// 	    palette[i] = (r << 24) | (g << 16) | (b << 8) | 0xff;
-// 	}
-	
-//         while(!in_file.eof()) {
-//             uint8_t qcolor;
-
-//             in_file.read(reinterpret_cast<char*>(&qcolor), 1);
-
-// 	    pixels[i++] = palette[qcolor];
-//         }
-//     }
-
-//     return pixels;    
-// }
-
 std::vector<uint8_t> rle_decode(const std::vector<uint8_t>& encoded) {
     std::vector<uint8_t> decoded;
     size_t size = encoded.size();
@@ -2826,6 +2699,8 @@ std::vector<uint8_t> rle_decode(const std::vector<uint8_t>& encoded) {
 }
 
 void img_save_kips(uint32_t* pixels, const char* filename, int w, int h) {
+    auto start = std::chrono::high_resolution_clock::now();
+
     uint8_t* quantized_image = new uint8_t[w * h];
     float** in = new float*[w * h];
     size_t depth = 3;
@@ -2838,11 +2713,7 @@ void img_save_kips(uint32_t* pixels, const char* filename, int w, int h) {
         in[i][2] = static_cast<float>((pixels[i] >> 8) & 0xff);
     }
 
-    auto start = std::chrono::high_resolution_clock::now();
     palette p = k_means(in, quantized_image, num_colors, w * h, depth);
-    auto end = std::chrono::high_resolution_clock::now();
-    
-    std::chrono::duration<double, std::milli> ms_double = end - start;
         
     // Create a vector to hold the data
     std::vector<uint8_t> byte_array;
@@ -2868,18 +2739,7 @@ void img_save_kips(uint32_t* pixels, const char* filename, int w, int h) {
         byte_array.push_back(quantized_image[i]);
     }
 
-    // Write the byte array to the file
-    std::ofstream out_filekm("../res/km.kips", std::ios::binary);
-    if (out_filekm.is_open()) {
-        out_filekm.write(reinterpret_cast<const char*>(byte_array.data()), byte_array.size());
-        out_filekm.close();
-    } else {
-        std::cerr << "Unable to open file " << "../res/km.kips" << " for writing\n";
-    }
-    
     std::vector<uint8_t> rle_encoded = flag_rle_encode(byte_array);
-    
-    std::cout << "Compression took " << ms_double.count() * 1e-3 << " seconds.\n";
     
     // Write the byte array to the file
     std::ofstream out_file(filename, std::ios::binary);
@@ -2896,6 +2756,10 @@ void img_save_kips(uint32_t* pixels, const char* filename, int w, int h) {
         delete[] in[i];
     }
     delete[] in;
+
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double, std::milli> ms_double = end - start;
+    std::cout << "Compression took " << ms_double.count() * 1e-3 << " seconds.\n";
 }
 
 uint32_t* img_load_kips(const char* filename, int* w, int* h) {
@@ -2915,6 +2779,7 @@ uint32_t* img_load_kips(const char* filename, int* w, int* h) {
         std::cerr << "Error: Failed to read file data" << std::endl;
         return nullptr;
     }
+    
     in_file.close();
 
     // Decode the entire RLE-encoded data
